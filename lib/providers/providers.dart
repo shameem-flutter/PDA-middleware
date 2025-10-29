@@ -2,12 +2,11 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pda/database/appdatabase.dart';
 import 'package:pda/models/count_session.dart';
-import 'package:pda/models/mapper/result_mapper.dart';
-import 'package:pda/models/pda_service_model.dart';
 import 'package:pda/models/products.dart';
 import 'package:pda/services/api_services/authservice.dart';
 import 'package:pda/services/api_services/pda_services.dart';
 import 'package:pda/services/api_services/submit_erp.dart';
+import 'package:pda/utilities/print_function.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:developer';
 import 'package:flutter/foundation.dart';
@@ -29,7 +28,10 @@ final authServiceProvider = Provider<Authservice>((ref) {
 
 // Pda Services Provider
 final pdaServicesProvider = Provider<PdaServices>((ref) {
-  return PdaServices(ref.read(sharedPrefsProvider.future));
+  return PdaServices(
+    ref.read(sharedPrefsProvider.future),
+    ref.read(authServiceProvider),
+  );
 });
 
 final submitErpServiceProvider = Provider<SubmitErpService>((ref) {
@@ -202,10 +204,19 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
       List<Product> productsFromApi = [];
 
       if (response.data is Map<String, dynamic>) {
-        productsFromApi = await compute(
-          _parseAndMapProductsInBackground,
-          response.data as Map<String, dynamic>,
-        );
+        final Map<String, dynamic> jsonData = response.data;
+        if (jsonData.containsKey('data') && jsonData['data'] is List) {
+          final List<dynamic> itemsList = jsonData['data'];
+          productsFromApi = itemsList.map((item) {
+            return Product.fromApiMap(item as Map<String, dynamic>);
+          }).toList();
+          ;
+          printOrLog("parsed ${productsFromApi.length} products from API");
+        } else {
+          printOrLog(
+            "Response doesn't contain 'data' field or it's not a List",
+          );
+        }
       } else if (response.data is List) {
         productsFromApi = (response.data as List)
             .map((item) => Product.fromMap(item as Map<String, dynamic>))
@@ -469,9 +480,9 @@ final sessionsNotifierProvider =
 final scanRequestProvider = StateProvider<bool>((ref) => false);
 
 // Parse function
-List<Product> _parseAndMapProductsInBackground(
-  Map<String, dynamic> responseData,
-) {
-  final pdaModel = PdaServiceModel.fromJson(responseData);
-  return pdaModel.result.map((r) => r.toLocalProduct()).toList();
-}
+// List<Product> _parseAndMapProductsInBackground(
+//   Map<String, dynamic> responseData,
+// ) {
+//   final pdaModel = PdaServiceModel.fromJson(responseData);
+//   return pdaModel.result.map((r) => r.toLocalProduct()).toList();
+// }

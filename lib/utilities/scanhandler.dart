@@ -36,20 +36,20 @@ Future<void> handleScannedCode(
   Product? product = await dbHelper.getProductByBarcode(code);
 
   // Try ERP API if not found locally
-  if (product == null) {
-    final pdaServices = ref.read(pdaServicesProvider);
-    final response = await pdaServices.getProductByBarcode(code);
-    if (response != null &&
-        response.statusCode == 200 &&
-        response.data['result'] != null) {
-      final data = response.data['result'] as List;
-      if (data.isNotEmpty) {
-        product = Product.fromMap(data.first as Map<String, dynamic>);
-        await dbHelper.insertOrUpdateProduct(product);
-        log("✅ Fetched product from API: ${product.name} (ID: ${product.id})");
-      }
-    }
-  }
+  // if (product == null) {
+  //   final pdaServices = ref.read(pdaServicesProvider);
+  //   final response = await pdaServices.getProductByBarcode(code);
+  //   if (response != null &&
+  //       response.statusCode == 200 &&
+  //       response.data['result'] != null) {
+  //     final data = response.data['result'] as List;
+  //     if (data.isNotEmpty) {
+  //       product = Product.fromMap(data.first as Map<String, dynamic>);
+  //       await dbHelper.insertOrUpdateProduct(product);
+  //       log("✅ Fetched product from API: ${product.name} (ID: ${product.id})");
+  //     }
+  //   }
+  // }
 
   if (product == null) {
     messenger.showSnackBar(

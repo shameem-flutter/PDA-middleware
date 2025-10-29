@@ -4,20 +4,20 @@ import 'package:pda/models/products.dart';
 extension ResultMapper on Result {
   Product toLocalProduct() {
     return Product(
-      id: productId,
-      name: productName,
-      barcode: barcode,
-      sku: reference ?? '',
-      erpQuantity: availableQty?.toInt() ?? 0,
+      id: itemId,
+      name: itemName,
+      barcode: itemCode,
+      sku: id.toString(),
+      erpQuantity: currentStock.toInt(),
       imageUrl: null,
-      categoryId: categoryId,
-      categoryName: categoryName,
-      salePrice: salePrice?.toDouble(),
-      cost: cost?.toInt(),
-      uomName: uomName?.toString(),
-      reference: reference,
-      productId: productId,
-      companyName: companyName?.toString() ?? "TEST COMPANY",
+      categoryId: autoId,
+      categoryName: printingName,
+      salePrice: salePrice.toDouble(),
+      cost: salePrice.toDouble(),
+      uomName: unit?.toString(),
+      reference: "",
+      productId: id.toString(),
+      companyName: "TEST COMPANY",
     );
   }
 }

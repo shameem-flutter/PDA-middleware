@@ -212,7 +212,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen> {
                                       product,
                                     );
 
-                                    if (mounted) return;
+                                    if (!mounted) return;
                                     await navigator.push<bool>(
                                       MaterialPageRoute(
                                         builder: (_) => CountingSessionScreen(

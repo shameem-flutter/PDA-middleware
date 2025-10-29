@@ -22,5 +22,5 @@ class ApiEndpoints {
   }
 
   static const String itemsEndpoint = "item/";
-  static const String baseUrl = "https://eleit-sp.febnotech.com/";
+  static const String baseUrl = "http://middleware.febnohost.com/";
 }

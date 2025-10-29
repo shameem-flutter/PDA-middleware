@@ -7,7 +7,7 @@ Future<void> printBarcodePdf({
   required String companyName,
   required String productName,
   required String barcode,
-  required int? cost,
+  required double? cost,
   required int quantity,
   required double widthMm,
   required double heightMm,

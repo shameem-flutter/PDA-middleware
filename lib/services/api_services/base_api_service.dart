@@ -23,12 +23,17 @@ class BaseApiServices {
     String? sharedPrefKey,
   }) async {
     try {
-      final response = await dio.request(
+      final response = await dio.get(
         endpoint,
-        options: Options(method: 'GET', headers: headers),
+        options: Options(headers: headers),
         data: data,
         queryParameters: queryParameters,
       );
+      // In BaseApiServices.get() method, add this before the dio.get call:
+      final fullUrl = dio.options.baseUrl + endpoint;
+      printOrLog("Full URL being called: $fullUrl");
+      printOrLog("Headers: $headers");
+      printOrLog("Query Parameters: $queryParameters");
 
       if (sharedPrefKey != null) {
         printOrLog("Saving GET response to sharedPrefKey: $sharedPrefKey");

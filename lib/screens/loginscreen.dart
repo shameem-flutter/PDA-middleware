@@ -138,12 +138,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                       CustomFormField(
                         controller: _dbController,
-                        validate: true,
+                        validate: false,
                         validator: (value) => value == null || value.isEmpty
                             ? "Enter database name"
                             : null,
                         hintText: "Company database",
-                        title: "Database",
+                        title: "Database (odoo only)",
                       ),
                       vertGap(10),
 

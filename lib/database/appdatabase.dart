@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 7, // ✅ Incremented version
+      version: 8, // ✅ Increment version to 8
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onOpen: (db) async {
@@ -46,16 +46,15 @@ class DatabaseHelper {
         imageUrl TEXT,
         category_name TEXT,
         category_id INTEGER DEFAULT 0,
-        sale_price INTEGER DEFAULT 0,
-        cost INTEGER DEFAULT 0,
+        sale_price REAL DEFAULT 0,
+        cost REAL DEFAULT 0,
         uom_name TEXT,
         reference TEXT,
-        product_id INTEGER DEFAULT 0,
+        product_id TEXT,  -- ✅ Changed to TEXT
         company_name TEXT
       )
     ''');
 
-    // ✅ REMOVED ON DELETE CASCADE - This was causing the bug
     await db.execute('''
       CREATE TABLE counting_sessions(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,11 +112,10 @@ class DatabaseHelper {
       }
     }
 
-    // ✅ Version 7: Remove CASCADE constraint
+    // Version 7: Remove CASCADE constraint
     if (oldVersion < 7) {
       debugPrint("🔄 Upgrading to version 7: Removing CASCADE constraint");
 
-      // Create temporary table without CASCADE
       await db.execute('''
         CREATE TABLE counting_sessions_new(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,7 +131,6 @@ class DatabaseHelper {
         )
       ''');
 
-      // Copy data
       await db.execute('''
         INSERT INTO counting_sessions_new 
         SELECT id, productId, countedQuantity, productName, sku, 
@@ -141,22 +138,66 @@ class DatabaseHelper {
         FROM counting_sessions
       ''');
 
-      // Drop old table
       await db.execute('DROP TABLE counting_sessions');
 
-      // Rename new table
       await db.execute(
         'ALTER TABLE counting_sessions_new RENAME TO counting_sessions',
       );
 
-      // Recreate index
       await db.execute(
         'CREATE INDEX idx_productId ON counting_sessions(productId)',
       );
 
       debugPrint("✅ Successfully removed CASCADE constraint");
     }
+
+    // ✅ Version 8: Fix product_id column type
+    if (oldVersion < 8) {
+      debugPrint("🔄 Upgrading to version 8: Changing product_id to TEXT");
+
+      // Create new products table with correct schema
+      await db.execute('''
+        CREATE TABLE products_new(
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          sku TEXT,
+          barcode TEXT,
+          erpQuantity INTEGER DEFAULT 0,
+          imageUrl TEXT,
+          category_name TEXT,
+          category_id INTEGER DEFAULT 0,
+          sale_price REAL DEFAULT 0,
+          cost REAL DEFAULT 0,
+          uom_name TEXT,
+          reference TEXT,
+          product_id TEXT,
+          company_name TEXT
+        )
+      ''');
+
+      // Copy data (product_id will be converted to TEXT automatically)
+      await db.execute('''
+        INSERT INTO products_new 
+        SELECT id, name, sku, barcode, erpQuantity, imageUrl, 
+               category_name, category_id, sale_price, cost, 
+               uom_name, reference, product_id, company_name
+        FROM products
+      ''');
+
+      // Drop old table
+      await db.execute('DROP TABLE products');
+
+      // Rename new table
+      await db.execute('ALTER TABLE products_new RENAME TO products');
+
+      // Recreate index
+      await db.execute('CREATE INDEX idx_barcode ON products(barcode)');
+
+      debugPrint("✅ Successfully changed product_id to TEXT");
+    }
   }
+
+  // ... rest of your methods remain the same
 
   // ---------------- Products ----------------
   Future<List<Product>> getProducts() async {
