@@ -50,6 +50,7 @@ dependencies:
   cookie_jar: ^4.0.8
   flutter_datawedge: ^3.2.0
   material_symbols_icons: ^4.2874.0
+  liquid_pull_to_refresh: ^3.0.1 
 
 
 dev_dependencies:

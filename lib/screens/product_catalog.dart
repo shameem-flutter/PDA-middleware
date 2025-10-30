@@ -148,118 +148,134 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen> {
                         Center(child: Text("Error: $error")),
                     data: (sessions) => displayedProducts.isEmpty
                         ? const Center(child: Text("No products found"))
-                        : RefreshIndicator(
-                            onRefresh: () async {
-                              final messenger = ScaffoldMessenger.of(context);
-                              try {
-                                await ref
-                                    .read(productsNotifierProvider.notifier)
-                                    .syncProducts();
-                                if (mounted) {
-                                  messenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text("Syncing-Completed"),
-                                      duration: Duration(seconds: 1),
-                                      backgroundColor: successColor,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
-                                  );
-                                }
-                              } catch (e) {
-                                if (mounted) {
-                                  messenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text("failed to sync-data!!!"),
-                                      duration: Duration(seconds: 2),
-                                      backgroundColor: errorColor,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
-                                  );
-                                }
-                              }
+                        : NotificationListener<OverscrollIndicatorNotification>(
+                            onNotification: (overScroll) {
+                              overScroll.disallowIndicator();
+                              return true;
                             },
-
-                            child: ListView.separated(
-                              separatorBuilder: (_, _) => vertGap(5),
-                              controller: _scrollController,
-                              itemCount: displayedProducts.length,
-                              itemBuilder: (context, index) {
-                                final product = displayedProducts[index];
-                                final existingSession = sessions.firstWhere(
-                                  (session) => session.productId == product.id,
-                                  orElse: () => CountingSession(
-                                    productId: product.id!,
-                                    countedQuantity: 0,
-                                    erpQuantity: product.erpQuantity,
-                                    productName: product.name,
-                                  ),
-                                );
-                                final hasSession =
-                                    existingSession.countedQuantity > 0;
-
-                                return InkWell(
-                                  onTap: () async {
-                                    _searchFocusNode.unfocus();
-                                    final dbHelper = ref.read(dbProvider);
-                                    final navigator = Navigator.of(context);
-                                    await dbHelper.insertOrUpdateProduct(
-                                      product,
-                                    );
-
-                                    if (!mounted) return;
-                                    await navigator.push<bool>(
-                                      MaterialPageRoute(
-                                        builder: (_) => CountingSessionScreen(
-                                          product: product,
-                                          initialCounted:
-                                              existingSession.countedQuantity,
+                            child: RefreshIndicator(
+                              triggerMode: RefreshIndicatorTriggerMode.onEdge,
+                              displacement: 40,
+                              strokeWidth: 3,
+                              onRefresh: () async {
+                                final messenger = ScaffoldMessenger.of(context);
+                                try {
+                                  await ref
+                                      .read(productsNotifierProvider.notifier)
+                                      .syncProducts();
+                                  if (mounted) {
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text("Syncing-Completed"),
+                                        duration: Duration(seconds: 1),
+                                        backgroundColor: successColor,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
+                                        behavior: SnackBarBehavior.floating,
                                       ),
                                     );
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 5,
-                                    ),
-                                    child: ListTile(
-                                      leading: Icon(Icons.image, size: 70),
-                                      trailing: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceEvenly,
-                                        children: [
-                                          Text("${product.erpQuantity}"),
-                                          const Text("in stock"),
-                                          if (hasSession)
-                                            Text(
-                                              "Counted: ${existingSession.countedQuantity}",
-                                              style: TextStyle(
-                                                color: successColor,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      title: Text(
-                                        product.name,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: hasSession
-                                              ? successColor
-                                              : null,
+                                  }
+                                } catch (e) {
+                                  if (mounted) {
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text("failed to sync-data!!!"),
+                                        duration: Duration(seconds: 2),
+                                        backgroundColor: errorColor,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
+                                        behavior: SnackBarBehavior.floating,
                                       ),
-                                      subtitle: Text(
-                                        product.barcode.toString(),
-                                      ),
-                                    ),
-                                  ),
-                                );
+                                    );
+                                  }
+                                }
                               },
+                              child: ListView.separated(
+                                physics: BouncingScrollPhysics(
+                                  parent: AlwaysScrollableScrollPhysics(),
+                                ),
+                                separatorBuilder: (_, _) => vertGap(5),
+                                controller: _scrollController,
+                                itemCount: displayedProducts.length,
+                                itemBuilder: (context, index) {
+                                  final product = displayedProducts[index];
+                                  final existingSession = sessions.firstWhere(
+                                    (session) =>
+                                        session.productId == product.id,
+                                    orElse: () => CountingSession(
+                                      productId: product.id!,
+                                      countedQuantity: 0,
+                                      erpQuantity: product.erpQuantity,
+                                      productName: product.name,
+                                    ),
+                                  );
+                                  final hasSession =
+                                      existingSession.countedQuantity > 0;
+
+                                  return InkWell(
+                                    onTap: () async {
+                                      _searchFocusNode.unfocus();
+                                      final dbHelper = ref.read(dbProvider);
+                                      final navigator = Navigator.of(context);
+                                      await dbHelper.insertOrUpdateProduct(
+                                        product,
+                                      );
+
+                                      if (!mounted) return;
+                                      await navigator.push<bool>(
+                                        MaterialPageRoute(
+                                          builder: (_) => CountingSessionScreen(
+                                            product: product,
+                                            initialCounted:
+                                                existingSession.countedQuantity,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 5,
+                                      ),
+                                      child: ListTile(
+                                        leading: Icon(Icons.image, size: 70),
+                                        trailing: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceEvenly,
+                                          children: [
+                                            Text("${product.erpQuantity}"),
+                                            const Text("in stock"),
+                                            if (hasSession)
+                                              Text(
+                                                "Counted: ${existingSession.countedQuantity}",
+                                                style: TextStyle(
+                                                  color: successColor,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                        title: Text(
+                                          product.name,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: hasSession
+                                                ? successColor
+                                                : null,
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          product.barcode.toString(),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                           ),
                   ),

@@ -55,8 +55,9 @@ class BaseApiServices {
 
   Future<Response?> post({
     required String endpoint,
-    required dynamic data,
+    dynamic data,
     Map<String, dynamic>? headers,
+    Map<String, dynamic>? queryParameters,
     String? sharedPrefKey,
   }) async {
     try {

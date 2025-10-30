@@ -43,7 +43,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         .read(authNotifierProvider.notifier)
         .login(
           baseUrl: _urlController.text.trim(),
-          db: _dbController.text.trim(),
+          // db: _dbController.text.trim(),
           username: usernameController.text.trim(),
           password: passwordController.text.trim(),
         );

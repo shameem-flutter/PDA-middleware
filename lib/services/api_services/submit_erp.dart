@@ -1,45 +1,64 @@
 import 'dart:developer';
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pda/constants/apiclient.dart';
 import 'package:pda/providers/providers.dart';
+import 'package:pda/services/api_services/authservice.dart';
 import 'package:pda/services/api_services/base_api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SubmitErpService {
   final BaseApiServices _api;
-
-  SubmitErpService(Future<SharedPreferences> prefs)
+  final Authservice _authservice;
+  SubmitErpService(Future<SharedPreferences> prefs, this._authservice)
     : _api = BaseApiServices(prefs: prefs, dio: ApiClient.dio);
 
   Future<bool> createStockAdjustment({
-    required String productName,
-    required String barcode,
+    required int itemCode,
     required int countedQuantity,
   }) async {
-    final data = {
-      "jsonrpc": "2.0",
-      "params": {
-        "product_name": productName,
-        "barcode": barcode,
-        "counted_quantity": countedQuantity,
-      },
-    };
+    final String? token = await _authservice.getDjangoToken();
+    if (token == null) {
+      log("❌ No Django token found. User might not be logged in.");
+      return false;
+    }
+
+    final String baseUrl =
+        "http://middleware.febnohost.com/api/v1/waslasoft_retail/items/$itemCode/";
+    final queryParams = {"organization_id": "WASL6A81F8A9"};
+
+    final data = {"current_stock": countedQuantity};
+
     try {
-      final response = await _api.post(
-        endpoint: '/api/create_stock_adjustment',
+      final response = await _api.dio.patch(
+        baseUrl,
         data: data,
+        options: Options(
+          headers: {
+            "Authorization": "Token $token",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+          },
+        ),
+        queryParameters: queryParams,
       );
-      final success = response?.statusCode == 200;
-      if (!success) {
+
+      final success = response.statusCode == 200;
+      if (success) {
+        log("✅ Stock updated successfully for itemCode: $itemCode");
+      } else {
         log(
-          'createStockAdjustment failed for $productName (barcode: $barcode): statusCode=${response?.statusCode}, response=${response?.data}',
+          "⚠️ Failed for $itemCode | Status: ${response.statusCode}, Data: ${response.data}",
         );
       }
       return success;
-    } catch (e) {
+    } on DioException catch (e) {
       log(
-        'createStockAdjustment error for $productName (barcode: $barcode): $e',
+        "❌ DioException updating item $itemCode: ${e.response?.statusCode} - ${e.response?.data}",
       );
+      return false;
+    } catch (e) {
+      log("❌ Unexpected error updating item $itemCode: $e");
       return false;
     }
   }
@@ -62,9 +81,16 @@ class SubmitErpService {
 
       for (final session in erpData) {
         log('submitToErp: Processing session: $session');
-        final productId = session['productId'] as int?;
-        final productName =
-            session['productName'] as String? ?? 'Unknown Product';
+        final itemCode = session['itemCode'] ?? session['productId'];
+        if (itemCode is! int) {
+          log('submitToErp: Invalid or missing itemCode for session: $session');
+          skippedProducts.add(
+            '${session['productName']} (Missing or invalid itemCode)',
+          );
+          allSuccessful = false;
+          continue;
+        }
+
         final countedQuantity = session['countedQuantity'] as int? ?? 0;
 
         // Check for barcode under multiple possible keys
@@ -78,43 +104,38 @@ class SubmitErpService {
           }
         }
 
-        if (productId == null) {
-          log(
-            'submitToErp: Skipping session, missing productId for $productName',
-          );
-          skippedProducts.add('$productName (Missing productId)');
+        if (itemCode == null) {
+          log('submitToErp: Skipping session, missing itemcode for $itemCode');
+          skippedProducts.add('$itemCode (Missing itemcode)');
           allSuccessful = false;
           continue;
         }
 
         if (barcode == null || barcode.isEmpty) {
           log(
-            'submitToErp: Invalid barcode for $productName (productId: $productId), barcode: $barcode, session keys: ${session.keys}',
+            'submitToErp: Invalid barcode for $itemCode (productId: $itemCode), barcode: $barcode, session keys: ${session.keys}',
           );
-          barcode = 'UNKNOWN_$productId';
+          barcode = 'UNKNOWN_$itemCode';
           log('submitToErp: Using fallback barcode: $barcode');
-          skippedProducts.add('$productName (Invalid barcode, used $barcode)');
+          skippedProducts.add('$itemCode (Invalid barcode, used $barcode)');
           // Proceed with fallback barcode
         }
 
         log(
-          'submitToErp: Submitting $productName (productId: $productId, barcode: $barcode, quantity: $countedQuantity)',
+          'submitToErp: Submitting $itemCode (productId: $itemCode, barcode: $barcode, quantity: $countedQuantity)',
         );
         final success = await createStockAdjustment(
-          productName: productName,
-          barcode: barcode,
+          itemCode: itemCode,
           countedQuantity: countedQuantity,
         );
 
         if (!success) {
-          log(
-            'submitToErp: Failed to submit $productName (productId: $productId)',
-          );
-          skippedProducts.add('$productName (Submission failed)');
+          log('submitToErp: Failed to submit $itemCode (productId: $itemCode)');
+          skippedProducts.add('$itemCode (Submission failed)');
           allSuccessful = false;
         } else {
           log(
-            'submitToErp: Successfully submitted $productName (productId: $productId)',
+            'submitToErp: Successfully submitted $itemCode (productId: $itemCode)',
           );
         }
       }
@@ -147,5 +168,8 @@ class SubmitErpService {
 
 // Provider for SubmitErpService
 final submitErpServiceProvider = Provider<SubmitErpService>((ref) {
-  return SubmitErpService(ref.read(sharedPrefsProvider.future));
+  return SubmitErpService(
+    ref.read(sharedPrefsProvider.future),
+    ref.read(authServiceProvider),
+  );
 });

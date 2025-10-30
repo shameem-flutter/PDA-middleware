@@ -38,7 +38,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           children: [
             _buildSettingCard("User-Name", authState.userName, Icons.person),
             _buildSettingCard("ERP-URL", authState.erpUrl, Icons.mail),
-            _buildSettingCard("DATABASE", authState.dataBase, Symbols.database),
+            _buildSettingCard("DATABASE", authState.token, Symbols.database),
             // vertGap(0),
             logOut("Log-Out", Icons.logout),
           ],

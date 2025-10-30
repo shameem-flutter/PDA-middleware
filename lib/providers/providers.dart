@@ -35,7 +35,10 @@ final pdaServicesProvider = Provider<PdaServices>((ref) {
 });
 
 final submitErpServiceProvider = Provider<SubmitErpService>((ref) {
-  return SubmitErpService(ref.read(sharedPrefsProvider.future));
+  return SubmitErpService(
+    ref.read(sharedPrefsProvider.future),
+    ref.read(authServiceProvider),
+  );
 });
 
 // Auth State
@@ -44,14 +47,14 @@ class AuthState {
   final bool isLoggedIn;
   final String? userName;
   final String? erpUrl;
-  final String? dataBase;
+  final String? token;
 
   AuthState({
     required this.isLoading,
     required this.isLoggedIn,
     this.userName,
     this.erpUrl,
-    this.dataBase,
+    this.token,
   });
 
   AuthState copyWith({
@@ -59,14 +62,14 @@ class AuthState {
     bool? isLoggedIn,
     String? userName,
     String? erpUrl,
-    String? dataBase,
+    String? token,
   }) {
     return AuthState(
       isLoading: isLoading ?? this.isLoading,
       isLoggedIn: isLoggedIn ?? this.isLoggedIn,
-      userName: userName ?? userName,
-      erpUrl: erpUrl ?? erpUrl,
-      dataBase: dataBase ?? dataBase,
+      userName: userName ?? this.userName,
+      erpUrl: erpUrl ?? this.erpUrl,
+      token: token ?? this.token,
     );
   }
 }
@@ -81,14 +84,14 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> _restoreSessionCookie() async {
     final prefs = await ref.read(sharedPrefsProvider.future);
-    final sessionId = prefs.getString("session_id");
+    final token = prefs.getString("token");
     final erpUrl = prefs.getString("erp_url");
 
-    if (sessionId != null && erpUrl != null) {
+    if (token != null && erpUrl != null) {
       final uri = Uri.parse(erpUrl);
-      final cookie = Cookie("session_id", sessionId);
+      final cookie = Cookie("token", token);
       ApiClient.cookieJar.saveFromResponse(uri, [cookie]);
-      log("✅ Restored session cookie into CookieJar: $sessionId");
+      log("✅ Restored token into CookieJar: $token");
     } else {
       log("⚠️ No session cookie found in SharedPreferences.");
     }
@@ -96,64 +99,68 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> _checkAuthenticationStatus() async {
     final prefs = await ref.read(sharedPrefsProvider.future);
-    final sessionId = prefs.getString("session_id");
+    final token = prefs.getString("token");
     final erpUrl = prefs.getString("erp_url");
-    final db = prefs.getString("db");
     final userName = prefs.getString("username");
 
-    if (sessionId != null && erpUrl != null) {
+    if (token != null && erpUrl != null) {
       await _restoreSessionCookie();
     }
 
     state = state.copyWith(
-      isLoggedIn: sessionId != null && erpUrl != null && db != null,
+      isLoggedIn: token != null && erpUrl != null,
       userName: userName,
       erpUrl: erpUrl,
-      dataBase: db,
       isLoading: false,
     );
   }
 
   Future<bool> login({
-    required String baseUrl,
-    required String db,
     required String username,
     required String password,
+    required String baseUrl,
   }) async {
-    state = state.copyWith(isLoading: true);
-    final success = await ref
-        .read(authServiceProvider)
-        .login(
-          baseUrl: baseUrl,
-          db: db,
-          username: username,
-          password: password,
-        );
+    try {
+      state = state.copyWith(isLoading: true);
 
-    if (success) {
-      final prefs = await ref.read(sharedPrefsProvider.future);
-      final sessionId = prefs.getString("session_id");
-      if (sessionId != null) {
-        await prefs.setString("erp_url", baseUrl);
-        await prefs.setString("db", db);
-        await prefs.setString("username", username);
-        log("Log in successfully with session $sessionId");
-        await ref.read(productsNotifierProvider.notifier).syncProducts();
-        state = state.copyWith(
-          isLoggedIn: true,
-          userName: username,
-          erpUrl: baseUrl,
-          dataBase: db,
-          isLoading: false,
-        );
-        return true;
-      } else {
-        log("Login succeeded but session ID missing in prefs!");
+      final authService = ref.read(authServiceProvider);
+      final success = await authService.login(
+        username: username,
+        password: password,
+        baseUrl: baseUrl,
+      );
+
+      if (!success) {
+        log("Login failed: Invalid credentials or server error");
         state = state.copyWith(isLoading: false);
         return false;
       }
-    } else {
-      log("Log in failed");
+
+      final prefs = await ref.read(sharedPrefsProvider.future);
+      final token = prefs.getString("token");
+
+      if (token == null || token.isEmpty) {
+        log("Login succeeded but token is missing in SharedPreferences");
+        state = state.copyWith(isLoading: false);
+        return false;
+      }
+
+      // Save user info in prefs
+      await prefs.setString("username", username);
+      log("Login successful with  token: $token");
+
+      // Optionally trigger product sync
+      await ref.read(productsNotifierProvider.notifier).syncProducts();
+
+      state = state.copyWith(
+        isLoggedIn: true,
+        userName: username,
+        isLoading: false,
+      );
+
+      return true;
+    } catch (e, st) {
+      log("Login error: $e", stackTrace: st);
       state = state.copyWith(isLoading: false);
       return false;
     }
@@ -166,12 +173,7 @@ class AuthNotifier extends Notifier<AuthState> {
     await prefs.remove("erp_url");
     await prefs.remove("db");
     await prefs.remove("username");
-    state = state.copyWith(
-      isLoggedIn: false,
-      userName: null,
-      dataBase: null,
-      erpUrl: null,
-    );
+    state = state.copyWith(isLoggedIn: false, userName: null, erpUrl: null);
   }
 }
 
@@ -240,6 +242,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
 
   Future<void> syncProducts() async {
     try {
+      state = const AsyncLoading<List<Product>>().copyWithPrevious(state);
       final products = await _loadProducts();
       state = AsyncData(products); // only set data, not loading
     } catch (e, st) {
