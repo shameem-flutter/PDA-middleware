@@ -38,12 +38,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
 
     log('Log in button pressed!');
-
+    final db = _dbController.text.trim();
+    final dbParam = db.isEmpty ? null : db;
     final success = await ref
         .read(authNotifierProvider.notifier)
         .login(
           baseUrl: _urlController.text.trim(),
-          // db: _dbController.text.trim(),
+          db: dbParam,
           username: usernameController.text.trim(),
           password: passwordController.text.trim(),
         );

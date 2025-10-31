@@ -16,6 +16,7 @@ class SubmitErpService {
   Future<bool> createStockAdjustment({
     required int itemCode,
     required int countedQuantity,
+    required int erpQuantity,
   }) async {
     final String? token = await _authservice.getDjangoToken();
     if (token == null) {
@@ -27,7 +28,7 @@ class SubmitErpService {
         "http://middleware.febnohost.com/api/v1/waslasoft_retail/items/$itemCode/";
     final queryParams = {"organization_id": "WASL6A81F8A9"};
 
-    final data = {"current_stock": countedQuantity};
+    final data = {"current_stock": countedQuantity + erpQuantity};
 
     try {
       final response = await _api.dio.patch(
@@ -92,6 +93,7 @@ class SubmitErpService {
         }
 
         final countedQuantity = session['countedQuantity'] as int? ?? 0;
+        final erpQuantity = session['erpQuantity'] as int? ?? 0;
 
         // Check for barcode under multiple possible keys
         String? barcode;
@@ -104,12 +106,12 @@ class SubmitErpService {
           }
         }
 
-        if (itemCode == null) {
-          log('submitToErp: Skipping session, missing itemcode for $itemCode');
-          skippedProducts.add('$itemCode (Missing itemcode)');
-          allSuccessful = false;
-          continue;
-        }
+        // if (itemCode == null) {
+        //   log('submitToErp: Skipping session, missing itemcode for $itemCode');
+        //   skippedProducts.add('$itemCode (Missing itemcode)');
+        //   allSuccessful = false;
+        //   continue;
+        // }
 
         if (barcode == null || barcode.isEmpty) {
           log(
@@ -127,6 +129,7 @@ class SubmitErpService {
         final success = await createStockAdjustment(
           itemCode: itemCode,
           countedQuantity: countedQuantity,
+          erpQuantity: erpQuantity,
         );
 
         if (!success) {

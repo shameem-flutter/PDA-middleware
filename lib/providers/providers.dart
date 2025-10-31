@@ -85,13 +85,23 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> _restoreSessionCookie() async {
     final prefs = await ref.read(sharedPrefsProvider.future);
     final token = prefs.getString("token");
+    final sessionId = prefs.getString("session_id");
     final erpUrl = prefs.getString("erp_url");
 
-    if (token != null && erpUrl != null) {
-      final uri = Uri.parse(erpUrl);
+    if (erpUrl == null) {
+      log("No erp URL in sharedpreferences.cannot restore auth");
+      return;
+    }
+    final uri = Uri.parse(erpUrl);
+
+    if (token != null && token.isNotEmpty) {
       final cookie = Cookie("token", token);
       ApiClient.cookieJar.saveFromResponse(uri, [cookie]);
       log("✅ Restored token into CookieJar: $token");
+    } else if (sessionId != null && sessionId.isNotEmpty) {
+      final sessionCookie = Cookie("session_id", sessionId);
+      await ApiClient.cookieJar.saveFromResponse(uri, [sessionCookie]);
+      log("restored odoo session_id $sessionCookie");
     } else {
       log("⚠️ No session cookie found in SharedPreferences.");
     }
@@ -102,13 +112,17 @@ class AuthNotifier extends Notifier<AuthState> {
     final token = prefs.getString("token");
     final erpUrl = prefs.getString("erp_url");
     final userName = prefs.getString("username");
-
-    if (token != null && erpUrl != null) {
+    final sessionId = prefs.getString("session_id");
+    final db = prefs.getString("db");
+    final hasValid =
+        (token != null && token.isNotEmpty) ||
+        (sessionId != null && sessionId.isNotEmpty);
+    if (hasValid && erpUrl != null) {
       await _restoreSessionCookie();
     }
 
     state = state.copyWith(
-      isLoggedIn: token != null && erpUrl != null,
+      isLoggedIn: hasValid && erpUrl != null,
       userName: userName,
       erpUrl: erpUrl,
       isLoading: false,
@@ -117,6 +131,7 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<bool> login({
     required String username,
+    String? db,
     required String password,
     required String baseUrl,
   }) async {
@@ -126,6 +141,7 @@ class AuthNotifier extends Notifier<AuthState> {
       final authService = ref.read(authServiceProvider);
       final success = await authService.login(
         username: username,
+        db: db,
         password: password,
         baseUrl: baseUrl,
       );
@@ -138,11 +154,22 @@ class AuthNotifier extends Notifier<AuthState> {
 
       final prefs = await ref.read(sharedPrefsProvider.future);
       final token = prefs.getString("token");
-
-      if (token == null || token.isEmpty) {
+      final sessionId = prefs.getString("session_id");
+      if ((token == null || token.isEmpty) &&
+          (sessionId == null || sessionId.isEmpty)) {
         log("Login succeeded but token is missing in SharedPreferences");
         state = state.copyWith(isLoading: false);
         return false;
+      }
+
+      if (token != null && token.isNotEmpty) {
+        log(
+          "loggin successfull with django token ${token.substring(0, 20)}...",
+        );
+      } else if (sessionId != null && sessionId.isNotEmpty) {
+        log(
+          "Loggin successfull with odoo session_id ${sessionId.substring(0, 30)}",
+        );
       }
 
       // Save user info in prefs
@@ -155,6 +182,7 @@ class AuthNotifier extends Notifier<AuthState> {
       state = state.copyWith(
         isLoggedIn: true,
         userName: username,
+        erpUrl: baseUrl,
         isLoading: false,
       );
 
@@ -168,11 +196,6 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> logout() async {
     await ref.read(authServiceProvider).logOut();
-    final prefs = await ref.read(sharedPrefsProvider.future);
-    await prefs.remove("session_id");
-    await prefs.remove("erp_url");
-    await prefs.remove("db");
-    await prefs.remove("username");
     state = state.copyWith(isLoggedIn: false, userName: null, erpUrl: null);
   }
 }
@@ -241,8 +264,15 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
   }
 
   Future<void> syncProducts() async {
+    final prefs = await ref.read(sharedPrefsProvider.future);
+    final db = prefs.getString("db");
+    final isOdoo = db != null && db.isEmpty;
+
     try {
-      state = const AsyncLoading<List<Product>>().copyWithPrevious(state);
+      if (isOdoo) {
+        state = const AsyncLoading<List<Product>>().copyWithPrevious(state);
+      }
+
       final products = await _loadProducts();
       state = AsyncData(products); // only set data, not loading
     } catch (e, st) {
