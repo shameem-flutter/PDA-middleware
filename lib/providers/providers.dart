@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pda/database/appdatabase.dart';
 import 'package:pda/models/count_session.dart';
+import 'package:pda/models/mapper/result_mapper.dart';
+import 'package:pda/models/pda_service_model.dart';
 import 'package:pda/models/products.dart';
 import 'package:pda/services/api_services/authservice.dart';
 import 'package:pda/services/api_services/pda_services.dart';
@@ -34,12 +36,52 @@ final pdaServicesProvider = Provider<PdaServices>((ref) {
   );
 });
 
-final submitErpServiceProvider = Provider<SubmitErpService>((ref) {
-  return SubmitErpService(
-    ref.read(sharedPrefsProvider.future),
-    ref.read(authServiceProvider),
-  );
+// In providers.dart - Replace the erpBackendProvider
+final erpBackendProvider = FutureProvider<ErpBackend>((ref) async {
+  final prefs = await ref.read(sharedPrefsProvider.future);
+  final token = prefs.getString("token");
+  final sessionId = prefs.getString("session_id");
+  final db = prefs.getString("db");
+  final backend = prefs.getString('backend');
+
+  if (backend == 'django') {
+    log('backend forced to django (saved in prefs)');
+    return ErpBackend.django;
+  } else if (backend == 'odoo') {
+    log('backend forced to odoo');
+    return ErpBackend.odoo;
+  }
+
+  // If we have a Django token, use Django
+  if (token != null && token.isNotEmpty) {
+    log("🔧 Detected Django backend (token found)");
+    return ErpBackend.django;
+  }
+
+  // If we have Odoo session_id or db, use Odoo
+  if ((sessionId != null && sessionId.isNotEmpty) ||
+      (db != null && db.isNotEmpty)) {
+    log("🔧 Detected Odoo backend (session_id or db found)");
+    return ErpBackend.odoo;
+  }
+
+  // Default to Django if nothing found
+  log("⚠️ No backend detected, defaulting to Django");
+  return ErpBackend.django;
 });
+
+// Update the dynamic provider to use FutureProvider
+final dynamicSubmitErpServiceProvider =
+    AutoDisposeFutureProvider<SubmitErpService>((ref) async {
+      final backend = await ref.watch(erpBackendProvider.future);
+      log("🧭 Using backend for SubmitErpService: $backend");
+
+      return SubmitErpService(
+        prefs: ref.read(sharedPrefsProvider.future),
+        authservice: ref.read(authServiceProvider),
+        backend: backend,
+      );
+    });
 
 // Auth State
 class AuthState {
@@ -108,21 +150,67 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<void> _checkAuthenticationStatus() async {
+    log("🔍 Checking authentication status...");
+
     final prefs = await ref.read(sharedPrefsProvider.future);
     final token = prefs.getString("token");
     final erpUrl = prefs.getString("erp_url");
     final userName = prefs.getString("username");
     final sessionId = prefs.getString("session_id");
     final db = prefs.getString("db");
-    final hasValid =
+    final backend = prefs.getString("backend");
+
+    final hasCredentials =
         (token != null && token.isNotEmpty) ||
         (sessionId != null && sessionId.isNotEmpty);
-    if (hasValid && erpUrl != null) {
-      await _restoreSessionCookie();
+
+    // ✅ If no credentials or no URL, definitely not logged in
+    if (!hasCredentials || erpUrl == null) {
+      log("❌ No valid credentials found");
+      state = state.copyWith(
+        isLoggedIn: false,
+        userName: null,
+        erpUrl: null,
+        isLoading: false,
+      );
+      return;
     }
 
+    // ✅ Additional validation: Check if we have backend info
+    if (backend == null || backend.isEmpty) {
+      log("⚠️ Session exists but no backend info - likely stale session");
+
+      // Try to infer backend from available data
+      if (token != null && token.isNotEmpty) {
+        log("🔧 Found token, assuming Django backend");
+        await prefs.setString("backend", "django");
+      } else if (sessionId != null && sessionId.isNotEmpty && db != null) {
+        log("🔧 Found session_id and db, assuming Odoo backend");
+        await prefs.setString("backend", "odoo");
+      } else {
+        // Can't determine backend, clear everything
+        log("❌ Cannot determine backend - clearing stale data");
+        await prefs.clear();
+        state = state.copyWith(
+          isLoggedIn: false,
+          userName: null,
+          erpUrl: null,
+          isLoading: false,
+        );
+        return;
+      }
+    }
+
+    // ✅ Restore session
+    await _restoreSessionCookie();
+
+    log("✅ Valid session found - user is logged in");
+    log("   Backend: $backend");
+    log("   User: $userName");
+    log("   URL: $erpUrl");
+
     state = state.copyWith(
-      isLoggedIn: hasValid && erpUrl != null,
+      isLoggedIn: true,
       userName: userName,
       erpUrl: erpUrl,
       isLoading: false,
@@ -214,59 +302,78 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
   Future<List<Product>> _loadProducts() async {
     final dbHelper = ref.read(dbProvider);
     final pdaServices = ref.read(pdaServicesProvider);
+
     try {
       final response = await pdaServices.getAllPda();
 
       if (response == null || response.statusCode != 200) {
         final cached = await dbHelper.getProducts();
-        if (cached.isNotEmpty) {
-          return cached;
-        } else {
-          throw Exception('Failed to load products');
-        }
+        if (cached.isNotEmpty) return cached;
+        throw Exception('Failed to load products');
       }
 
       List<Product> productsFromApi = [];
 
       if (response.data is Map<String, dynamic>) {
-        final Map<String, dynamic> jsonData = response.data;
-        if (jsonData.containsKey('data') && jsonData['data'] is List) {
-          final List<dynamic> itemsList = jsonData['data'];
-          productsFromApi = itemsList.map((item) {
-            return Product.fromApiMap(item as Map<String, dynamic>);
+        final jsonData = response.data as Map<String, dynamic>;
+
+        // ✅ Odoo format (data inside "result")
+        if (jsonData.containsKey("result") && jsonData["result"] is List) {
+          final List<dynamic> resultList = jsonData["result"];
+
+          productsFromApi = resultList.map((item) {
+            return Product.fromApi({
+              "id": item["product_id"],
+              "name": item["product_name"] ?? "Unknown",
+              "barcode": item["barcode"] ?? "",
+              "product_id": item["reference"] ?? "",
+              "erp_quantity": (item["available_qty"] ?? 0).toInt(),
+            });
           }).toList();
-          ;
-          printOrLog("parsed ${productsFromApi.length} products from API");
-        } else {
-          printOrLog(
-            "Response doesn't contain 'data' field or it's not a List",
-          );
+
+          printOrLog("✅ Parsed ${productsFromApi.length} Odoo products");
         }
-      } else if (response.data is List) {
-        productsFromApi = (response.data as List)
-            .map((item) => Product.fromMap(item as Map<String, dynamic>))
-            .toList();
+        // ✅ Django format (data inside "data")
+        else if (jsonData.containsKey("data") && jsonData["data"] is List) {
+          final List<dynamic> itemsList = jsonData["data"];
+          productsFromApi = itemsList
+              .map((item) => Product.fromApi(item as Map<String, dynamic>))
+              .toList();
+          printOrLog("✅ Parsed ${productsFromApi.length} Django products");
+
+          // 🧩 ADD THIS DEBUG BLOCK HERE ↓↓↓
+          for (final item in itemsList) {
+            final map = item as Map<String, dynamic>;
+            debugPrint(
+              '🧾 Django Product → name: ${map['item_name'] ?? map['printing_name']}, '
+              'code: ${map['item_code']}, '
+              'price: ${map['sale_price'] ?? map['mrp']}, '
+              'stock: ${map['current_stock']}',
+            );
+          }
+          // 🧩 DEBUG BLOCK ENDS ↑↑↑
+        }
       }
 
+      // ✅ Save to local DB
       if (productsFromApi.isNotEmpty) {
         await dbHelper.syncProducts(productsFromApi);
       }
 
       return productsFromApi;
-    } catch (e, _) {
+    } catch (e, st) {
+      printOrLog("❌ Error loading products: $e");
       final cached = await dbHelper.getProducts();
-      if (cached.isNotEmpty) {
-        return cached;
-      } else {
-        rethrow;
-      }
+      if (cached.isNotEmpty) return cached;
+      state = AsyncError(e, st);
+      rethrow;
     }
   }
 
   Future<void> syncProducts() async {
     final prefs = await ref.read(sharedPrefsProvider.future);
     final db = prefs.getString("db");
-    final isOdoo = db != null && db.isEmpty;
+    final isOdoo = db != null && db.isNotEmpty;
 
     try {
       if (isOdoo) {
@@ -436,7 +543,12 @@ class SessionsNotifier extends AsyncNotifier<List<CountingSession>> {
 
     try {
       final dbHelper = ref.read(dbProvider);
-      final submitErpService = ref.read(submitErpServiceProvider);
+
+      // ✅ Use the dynamic provider with async watch
+      final submitErpService = await ref.read(
+        dynamicSubmitErpServiceProvider.future,
+      );
+
       final List<Map<String, dynamic>> erpData = [];
       final List<String> skippedProducts = [];
 
@@ -448,8 +560,10 @@ class SessionsNotifier extends AsyncNotifier<List<CountingSession>> {
           skippedProducts.add(session.productName ?? 'Unknown Product');
           continue;
         }
+
         erpData.add({
           'productId': session.productId,
+          'itemCode': session.productId, // For Django
           'productName': session.productName,
           'countedQuantity': session.countedQuantity,
           'erpQuantity': session.erpQuantity,
@@ -466,7 +580,7 @@ class SessionsNotifier extends AsyncNotifier<List<CountingSession>> {
         };
       }
 
-      // Call ERP service
+      // Call ERP service (will automatically use the correct backend)
       final result = await submitErpService.submitToErp(erpData);
 
       // Safely cast skippedProducts from API
@@ -512,10 +626,14 @@ final sessionsNotifierProvider =
 // Scan Request Provider
 final scanRequestProvider = StateProvider<bool>((ref) => false);
 
-// Parse function
-// List<Product> _parseAndMapProductsInBackground(
-//   Map<String, dynamic> responseData,
-// ) {
-//   final pdaModel = PdaServiceModel.fromJson(responseData);
-//   return pdaModel.result.map((r) => r.toLocalProduct()).toList();
-// }
+List<Product> _parseAndMapProductsInBackground(
+  Map<String, dynamic> responseData,
+) {
+  try {
+    final pdaModel = PdaServiceModel.fromJson(responseData);
+    return pdaModel.result.map((r) => r.toLocalProduct()).toList();
+  } catch (e) {
+    log("⚠️ Failed background parsing: $e");
+    return [];
+  }
+}

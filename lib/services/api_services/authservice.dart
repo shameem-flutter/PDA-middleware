@@ -200,9 +200,188 @@ class Authservice {
       baseUrl: baseUrl,
     );
     if (djangoSuccess) {
+      final prefs = await _prefs;
+      await prefs.setString('backend', 'django');
       return true;
     }
     if (db != null && db.isNotEmpty) {
+      final odooSuccess = await loginWithOdoo(
+        baseUrl: baseUrl,
+        db: db,
+        username: username,
+        password: password,
+      );
+      if (odooSuccess) {
+        final prefs = await _prefs;
+        await prefs.setString('backend', 'odoo');
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// ✅ IMPROVED: Thorough logout that clears everything
+  Future<void> logOut() async {
+    final prefs = await _prefs;
+    final baseUrl = prefs.getString("erp_url");
+    final db = prefs.getString("db");
+    final token = prefs.getString("token");
+
+    log("🔄 Starting logout process...");
+
+    try {
+      // 🔹 Attempt Odoo logout
+      if (db != null && db.isNotEmpty && baseUrl != null) {
+        const String endpoint = "/web/session/destroy";
+        log("🔄 Logging out from Odoo...");
+
+        try {
+          final response = await _dio.post(
+            "$baseUrl$endpoint",
+            data: {"jsonrpc": "2.0", "params": {}},
+            options: Options(
+              headers: {"Content-Type": "application/json"},
+              validateStatus: (status) => status != null && status < 500,
+            ),
+          );
+
+          if (response.statusCode == 200) {
+            log("✅ Odoo logout successful.");
+          } else {
+            log("⚠️ Odoo logout failed: ${response.statusCode}");
+          }
+        } catch (e) {
+          log("⚠️ Odoo logout error (continuing cleanup): $e");
+        }
+      }
+
+      // 🔹 Attempt Django logout
+      if (token != null && token.isNotEmpty && baseUrl != null) {
+        final logoutUrl = "$baseUrl/api/logout/";
+        log("🔄 Logging out from Django...");
+
+        try {
+          final response = await _dio.post(
+            logoutUrl,
+            options: Options(
+              headers: {
+                "Authorization": "Token $token",
+                "Content-Type": "application/json",
+              },
+              validateStatus: (status) => status != null && status < 500,
+            ),
+          );
+
+          if (response.statusCode == 200) {
+            log("✅ Django logout successful.");
+          } else {
+            log("⚠️ Django logout failed: ${response.statusCode}");
+          }
+        } catch (e) {
+          log("⚠️ Django logout error (continuing cleanup): $e");
+        }
+      }
+    } catch (e) {
+      log("⚠️ Unexpected error during logout: $e");
+    } finally {
+      // ✅ ALWAYS clear local data, even if server logout fails
+      log("🧹 Clearing all local session data...");
+
+      try {
+        // Clear all cookies
+        await ApiClient.cookieJar.deleteAll();
+        log("✅ Cookies cleared");
+      } catch (e) {
+        log("⚠️ Error clearing cookies: $e");
+      }
+
+      try {
+        // Clear all SharedPreferences - Method 1: Individual removes
+        await prefs.remove("token");
+        await prefs.remove("session_id");
+        await prefs.remove("erp_url");
+        await prefs.remove("db");
+        await prefs.remove("username");
+        await prefs.remove("password");
+        await prefs.remove("backend");
+
+        // Also clear any other app-specific keys you might have
+        await prefs.remove("first_run");
+
+        log("✅ SharedPreferences cleared (individual keys)");
+      } catch (e) {
+        log("⚠️ Error clearing individual keys: $e");
+      }
+
+      try {
+        // Clear all SharedPreferences - Method 2: Clear everything (more thorough)
+        final allKeys = prefs.getKeys();
+        log("🔍 Clearing ${allKeys.length} SharedPreferences keys: $allKeys");
+
+        for (final key in allKeys) {
+          await prefs.remove(key);
+        }
+
+        log("✅ All SharedPreferences cleared");
+      } catch (e) {
+        log("⚠️ Error clearing all SharedPreferences: $e");
+      }
+
+      log("✅ Logout complete - all local session data cleared.");
+    }
+  }
+
+  /// ✅ NEW: Check if user has valid credentials
+  Future<bool> hasValidSession() async {
+    final prefs = await _prefs;
+    final token = prefs.getString("token");
+    final sessionId = prefs.getString("session_id");
+    final erpUrl = prefs.getString("erp_url");
+    final backend = prefs.getString("backend");
+
+    // Must have either token or sessionId, AND must have erp_url
+    final hasCredentials =
+        (token != null && token.isNotEmpty) ||
+        (sessionId != null && sessionId.isNotEmpty);
+    final hasUrl = erpUrl != null && erpUrl.isNotEmpty;
+    final hasBackend = backend != null && backend.isNotEmpty;
+
+    return hasCredentials && hasUrl && hasBackend;
+  }
+
+  Future<String?> getSessionId() async {
+    return (await _prefs).getString("session_id");
+  }
+
+  /// ✅ NEW: Get current backend type
+  Future<String?> getBackend() async {
+    final prefs = await _prefs;
+    return prefs.getString("backend");
+  }
+
+  /// ✅ NEW: Refresh token (works for both backends)
+  Future<bool> refreshToken() async {
+    final backend = await getBackend();
+
+    if (backend == "django") {
+      final token = await refreshDjangoToken();
+      return token != null;
+    } else if (backend == "odoo") {
+      // For Odoo, we need to re-authenticate
+      final prefs = await _prefs;
+      final username = prefs.getString("username");
+      final password = prefs.getString("password");
+      final baseUrl = prefs.getString("erp_url");
+      final db = prefs.getString("db");
+
+      if (username == null ||
+          password == null ||
+          baseUrl == null ||
+          db == null) {
+        log("❌ Cannot refresh Odoo session — missing credentials.");
+        return false;
+      }
+
       return await loginWithOdoo(
         baseUrl: baseUrl,
         db: db,
@@ -210,35 +389,7 @@ class Authservice {
         password: password,
       );
     }
+
     return false;
-  }
-
-  Future<void> logOut() async {
-    final prefs = await _prefs;
-    final baseUrl = prefs.getString("erp_url");
-    final isOdoo =
-        prefs.getString("db") != null && prefs.getString("db")!.isNotEmpty;
-
-    if (isOdoo && baseUrl != null) {
-      const String endpoint = "/web/session/destroy";
-
-      try {
-        await _dio.post(
-          "$baseUrl$endpoint",
-          data: {"jsonrpc": "2.0", "params": {}},
-        );
-      } catch (e) {
-        log("Odoo logout failed: $e");
-      }
-    }
-
-    // Clear the session from the manager AND from local storage
-    await ApiClient.cookieJar.deleteAll();
-    await prefs.clear();
-    log("Session data cleared");
-  }
-
-  Future<String?> getSessionId() async {
-    return (await _prefs).getString("session_id");
   }
 }

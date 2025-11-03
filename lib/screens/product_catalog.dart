@@ -209,7 +209,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen> {
                                     (session) =>
                                         session.productId == product.id,
                                     orElse: () => CountingSession(
-                                      productId: product.id!,
+                                      productId: product.id ?? 0,
                                       countedQuantity: 0,
                                       erpQuantity: product.erpQuantity,
                                       productName: product.name,

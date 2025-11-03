@@ -15,6 +15,11 @@ class BaseApiServices {
     : dio = dio ?? ApiClient.dio,
       _prefs = prefs;
 
+  Future<String?> _getBaseUrl() async {
+    final prefs = await _prefs;
+    return prefs.getString('erp_url');
+  }
+
   Future<Response?> get({
     required String endpoint,
     dynamic data,
@@ -23,32 +28,37 @@ class BaseApiServices {
     String? sharedPrefKey,
   }) async {
     try {
+      final baseUrl = await _getBaseUrl();
+      if (baseUrl == null) {
+        printOrLog("❌ No base URL found");
+        return null;
+      }
+
+      final fullUrl = '$baseUrl$endpoint';
+      printOrLog("📤 GET: $fullUrl");
+      printOrLog("📤 Headers: $headers");
+      printOrLog("📤 Query Parameters: $queryParameters");
+
       final response = await dio.get(
-        endpoint,
+        fullUrl,
         options: Options(headers: headers),
         data: data,
         queryParameters: queryParameters,
       );
-      // In BaseApiServices.get() method, add this before the dio.get call:
-      final fullUrl = dio.options.baseUrl + endpoint;
-      printOrLog("Full URL being called: $fullUrl");
-      printOrLog("Headers: $headers");
-      printOrLog("Query Parameters: $queryParameters");
 
       if (sharedPrefKey != null) {
-        printOrLog("Saving GET response to sharedPrefKey: $sharedPrefKey");
-        (await _prefs).setString(sharedPrefKey, response.data.toString());
+        final prefs = await _prefs;
+        prefs.setString(sharedPrefKey, response.data.toString());
       }
-      // printOrLog("GET $endpoint Response: ${response.data}");
 
       return response;
     } on DioException catch (e) {
       printOrLog(
-        "GET $endpoint DioException: ${e.response?.statusCode} - ${e.response?.data}",
+        "❌ GET $endpoint DioException: ${e.response?.statusCode} - ${e.response?.data}",
       );
       return e.response;
     } catch (e) {
-      printOrLog("GET $endpoint error: $e");
+      printOrLog("❌ GET $endpoint error: $e");
       return null;
     }
   }
@@ -61,26 +71,37 @@ class BaseApiServices {
     String? sharedPrefKey,
   }) async {
     try {
-      printOrLog("Data: $data");
+      final baseUrl = await _getBaseUrl();
+      if (baseUrl == null) {
+        printOrLog("❌ No base URL found");
+        return null;
+      }
+
+      final fullUrl = '$baseUrl$endpoint';
+      printOrLog("📤 POST: $fullUrl");
+      printOrLog("📤 Data: $data");
+
       final response = await dio.post(
-        endpoint,
+        fullUrl,
         data: data,
         options: Options(headers: headers),
+        queryParameters: queryParameters,
       );
 
       if (sharedPrefKey != null) {
-        (await _prefs).setString(sharedPrefKey, response.data.toString());
+        final prefs = await _prefs;
+        prefs.setString(sharedPrefKey, response.data.toString());
       }
-      printOrLog("POST $endpoint Response: ${response.data}");
+      printOrLog("📥 POST Response: ${response.data}");
 
       return response;
     } on DioException catch (e) {
       printOrLog(
-        "POST $endpoint DioException: ${e.response?.statusCode} - ${e.response?.data}",
+        "❌ POST $endpoint DioException: ${e.response?.statusCode} - ${e.response?.data}",
       );
       return e.response;
     } catch (e) {
-      printOrLog("POST $endpoint error: $e");
+      printOrLog("❌ POST $endpoint error: $e");
       return null;
     }
   }

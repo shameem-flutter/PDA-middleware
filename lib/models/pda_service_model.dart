@@ -1,41 +1,54 @@
-// To parse this JSON data, do
-//
-//     final pdaServiceModel = pdaServiceModelFromJson(jsonString);
-
 import 'dart:convert';
 
+/// Parse and serialize the full API model
 PdaServiceModel pdaServiceModelFromJson(String str) =>
     PdaServiceModel.fromJson(json.decode(str));
 
 String pdaServiceModelToJson(PdaServiceModel data) =>
     json.encode(data.toJson());
 
+/// Root Model (unified for both Django and Odoo)
 class PdaServiceModel {
-  int statuscode;
-  String title;
-  List<Result> result;
-  dynamic errors;
-  String message;
+  final String? jsonrpc; // ✅ For Odoo
+  final dynamic id;
+  final int? statusCode; // ✅ For Django
+  final String? title;
+  final List<Result> result;
+  final dynamic errors;
+  final String? message;
 
   PdaServiceModel({
-    required this.statuscode,
-    required this.title,
+    this.jsonrpc,
+    this.id,
+    this.statusCode,
+    this.title,
     required this.result,
-    required this.errors,
-    required this.message,
+    this.errors,
+    this.message,
   });
 
-  factory PdaServiceModel.fromJson(Map<String, dynamic> json) =>
-      PdaServiceModel(
-        statuscode: json["statuscode"],
-        title: json["title"],
-        result: List<Result>.from(json["data"].map((x) => Result.fromJson(x))),
-        errors: json["errors"],
-        message: json["message"],
-      );
+  /// ✅ Handles both Django and Odoo responses automatically
+  factory PdaServiceModel.fromJson(Map<String, dynamic> json) {
+    final isOdoo = json.containsKey("jsonrpc");
+
+    return PdaServiceModel(
+      jsonrpc: json["jsonrpc"],
+      id: json["id"],
+      statusCode: json["statuscode"],
+      title: json["title"],
+      result: List<Result>.from(
+        (isOdoo ? json["result"] ?? [] : json["data"] ?? json["result"] ?? [])
+            .map((x) => Result.fromUnified(x)),
+      ),
+      errors: json["errors"],
+      message: json["message"],
+    );
+  }
 
   Map<String, dynamic> toJson() => {
-    "statuscode": statuscode,
+    "jsonrpc": jsonrpc,
+    "id": id,
+    "statuscode": statusCode,
     "title": title,
     "data": List<dynamic>.from(result.map((x) => x.toJson())),
     "errors": errors,
@@ -43,198 +56,204 @@ class PdaServiceModel {
   };
 }
 
+/// ✅ Unified Result model for Odoo, Django, and SQLite
 class Result {
-  String id;
-  int autoId;
-  bool isDeleted;
-  dynamic customOrder;
-  dynamic altTxt;
-  String organization;
-  int itemId;
-  dynamic group;
-  String itemCode;
-  String itemName;
-  String printingName;
-  String lastItemNo;
-  String hsnCode;
-  int mrp;
-  int wholesalePrice;
-  dynamic specialPrice;
-  double salePrice;
-  bool lockedPrice;
-  int purchasePrice;
-  int? averagePurchasePrice;
-  int currentStock;
-  int reorderLevel;
-  String remarks;
-  dynamic brand;
-  String? unit;
-  String taxId;
-  String openingStock;
-  String enteredBy;
-  DateTime entryDate;
-  dynamic subgroup;
-  String masterItemId;
-  String conversionQty;
-  dynamic documentId;
-  bool flgdeleted;
-  dynamic openingStockPurchaseRate;
-  String taxPercentage;
-  String basicRate;
-  bool flgWeighingScaleItem;
-  String costPrice;
-  String keralaFoodCessPercentage;
-  int gstTaxPercentage;
-  double cgstTaxPercentage;
-  double sgstTaxPercentage;
-  int igstTaxPercentage;
-  String itemNameArabic;
-  String itemidx;
+  final dynamic id;
+  final String name;
+  final String sku;
+  final String? barcode;
+  final int erpQuantity;
+  final dynamic productId;
+  final String? imageUrl;
+  final String? categoryName;
+  final int? categoryId;
+  final double? salePrice;
+  final double? cost;
+  final double? tax;
+  final String? uomName;
+  final int? uomId;
+  final String? reference;
+  final String? companyName;
+  final String? companyId;
 
   Result({
-    required this.id,
-    required this.autoId,
-    required this.isDeleted,
-    required this.customOrder,
-    required this.altTxt,
-    required this.organization,
-    required this.itemId,
-    required this.group,
-    required this.itemCode,
-    required this.itemName,
-    required this.printingName,
-    required this.lastItemNo,
-    required this.hsnCode,
-    required this.mrp,
-    required this.wholesalePrice,
-    required this.specialPrice,
-    required this.salePrice,
-    required this.lockedPrice,
-    required this.purchasePrice,
-    required this.averagePurchasePrice,
-    required this.currentStock,
-    required this.reorderLevel,
-    required this.remarks,
-    required this.brand,
-    required this.unit,
-    required this.taxId,
-    required this.openingStock,
-    required this.enteredBy,
-    required this.entryDate,
-    required this.subgroup,
-    required this.masterItemId,
-    required this.conversionQty,
-    required this.documentId,
-    required this.flgdeleted,
-    required this.openingStockPurchaseRate,
-    required this.taxPercentage,
-    required this.basicRate,
-    required this.flgWeighingScaleItem,
-    required this.costPrice,
-    required this.keralaFoodCessPercentage,
-    required this.gstTaxPercentage,
-    required this.cgstTaxPercentage,
-    required this.sgstTaxPercentage,
-    required this.igstTaxPercentage,
-    required this.itemNameArabic,
-    required this.itemidx,
+    this.id,
+    required this.name,
+    required this.sku,
+    this.barcode,
+    this.erpQuantity = 0,
+    this.productId,
+    this.imageUrl,
+    this.categoryName,
+    this.categoryId,
+    this.salePrice,
+    this.cost,
+    this.tax,
+    this.uomName,
+    this.uomId,
+    this.reference,
+    this.companyName,
+    this.companyId,
   });
 
-  factory Result.fromJson(Map<String, dynamic> json) => Result(
-    id: json["id"],
-    autoId: json["auto_id"],
-    isDeleted: json["is_deleted"],
-    customOrder: json["custom_order"],
-    altTxt: json["alt_txt"],
-    organization: json["organization"],
-    itemId: json["item_id"],
-    group: json["group"],
-    itemCode: json["item_code"],
-    itemName: json["item_name"],
-    printingName: json["printing_name"],
-    lastItemNo: json["last_item_no"],
-    hsnCode: json["hsn_code"],
-    mrp: json["mrp"],
-    wholesalePrice: json["wholesale_price"],
-    specialPrice: json["special_price"],
-    salePrice: json["sale_price"],
-    lockedPrice: json["locked_price"],
-    purchasePrice: json["purchase_price"],
-    averagePurchasePrice: json["average_purchase_price"],
-    currentStock: json["current_stock"],
-    reorderLevel: json["reorder_level"],
-    remarks: json["remarks"],
-    brand: json["brand"],
-    unit: json["unit"],
-    taxId: json["tax_id"],
-    openingStock: json["opening_stock"],
-    enteredBy: json["entered_by"],
-    entryDate: DateTime.parse(json["entry_date"]),
-    subgroup: json["subgroup"],
-    masterItemId: json["master_item_id"],
-    conversionQty: json["conversion_qty"],
-    documentId: json["document_id"],
-    flgdeleted: json["flgdeleted"],
-    openingStockPurchaseRate: json["opening_stock_purchase_rate"],
-    taxPercentage: json["tax_percentage"],
-    basicRate: json["basic_rate"],
-    flgWeighingScaleItem: json["flg_weighing_scale_item"],
-    costPrice: json["cost_price"],
-    keralaFoodCessPercentage: json["kerala_food_cess_percentage"],
-    gstTaxPercentage: json["gst_tax_percentage"],
-    cgstTaxPercentage: json["cgst_tax_percentage"]?.toDouble(),
-    sgstTaxPercentage: json["sgst_tax_percentage"]?.toDouble(),
-    igstTaxPercentage: json["igst_tax_percentage"],
-    itemNameArabic: json["item_name_arabic"],
-    itemidx: json["itemidx"],
-  );
+  static String? _safeString(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return value;
+    return value.toString();
+  }
+
+  /// ✅ Handles Odoo, Django, and local SQLite formats
+  factory Result.fromUnified(Map<String, dynamic> map) {
+    // Detect which backend it came from
+    final isOdoo =
+        map.containsKey("available_qty") || map.containsKey("product_id");
+    final isDjango =
+        map.containsKey("item_code") && map.containsKey("item_name");
+
+    if (isOdoo) {
+      // 🔹 Odoo format
+      return Result(
+        id: _toInt(map['id']) ?? _toInt(map['product_id']),
+        name: map['product_name'] ?? map['name'] ?? 'Unknown',
+        sku:
+            map['default_code'] ??
+            map['reference'] ??
+            map['barcode'] ??
+            'NO-SKU',
+        barcode: map['barcode'] as String?,
+        erpQuantity: _toInt(map['available_qty']) ?? 0,
+        productId: map['product_id'],
+        imageUrl: map['image_url'] as String?,
+        categoryName: map['category_name'] as String?,
+        categoryId: _toInt(map['category_id']),
+        salePrice: _toDouble(map['sale_price']),
+        cost: _toDouble(map['cost']),
+        tax: _toDouble(map['tax']),
+        uomName: map['uom_name'] as String?,
+        uomId: _toInt(map['uom_id']),
+        reference: map['reference'] as String?,
+        companyName: map['company_name'] as String?,
+        companyId: _safeString(map['company_id']),
+      );
+    } else if (isDjango) {
+      // 🔹 Django format
+      return Result(
+        id: _toInt(map['item_id']) ?? _toInt(map['auto_id']),
+        name: map['item_name'] ?? map['printing_name'] ?? 'Unknown Product',
+        sku: map['item_code'] ?? 'NO-SKU',
+        barcode: map['item_code'],
+        erpQuantity: _toInt(map['current_stock']) ?? 0,
+        productId: map['item_id'],
+        salePrice: _toDouble(map['sale_price']) ?? _toDouble(map['mrp']),
+        cost:
+            _toDouble(map['purchase_price']) ??
+            _toDouble(map['cost_price']) ??
+            _toDouble(map['basic_rate']),
+        tax:
+            _toDouble(map['gst_tax_percentage']) ??
+            _toDouble(map['tax_percentage']),
+        uomName: map['unit']?.toString(),
+        categoryName: map['group']?.toString(),
+        categoryId: null,
+        reference: map['item_code'],
+        companyName: map['organization']?.toString(),
+        imageUrl: map['image_url']?.toString(),
+      );
+    } else {
+      // 🔹 Local SQLite or unknown fallback
+      return Result(
+        id: _toInt(map['id']),
+        name: map['name'] ?? 'Unknown Product',
+        sku: map['sku'] ?? 'NO-SKU',
+        barcode: map['barcode'] as String?,
+        erpQuantity: _toInt(map['erpQuantity']) ?? 0,
+        productId: map['product_id'],
+        imageUrl: map['imageUrl'] ?? map['image_url'],
+        categoryName: map['category_name'] as String?,
+        categoryId: _toInt(map['category_id']),
+        salePrice: _toDouble(map['sale_price']),
+        cost: _toDouble(map['cost']),
+        tax: _toDouble(map['tax']),
+        uomName: map['uom_name'] as String?,
+        reference: map['reference'] as String?,
+        companyName: map['company_name'] as String?,
+        companyId: _safeString(map['company_id']),
+      );
+    }
+  }
+
+  // ✅ Add helper to safely convert to int
+  static int? _toInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value);
+    if (value is num) return value.toInt();
+    return null;
+  }
+
+  static double? _toDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
 
   Map<String, dynamic> toJson() => {
     "id": id,
-    "auto_id": autoId,
-    "is_deleted": isDeleted,
-    "custom_order": customOrder,
-    "alt_txt": altTxt,
-    "organization": organization,
-    "item_id": itemId,
-    "group": group,
-    "item_code": itemCode,
-    "item_name": itemName,
-    "printing_name": printingName,
-    "last_item_no": lastItemNo,
-    "hsn_code": hsnCode,
-    "mrp": mrp,
-    "wholesale_price": wholesalePrice,
-    "special_price": specialPrice,
+    "name": name,
+    "sku": sku,
+    "barcode": barcode,
+    "erpQuantity": erpQuantity,
+    "product_id": productId,
+    "image_url": imageUrl,
+    "category_name": categoryName,
+    "category_id": categoryId,
     "sale_price": salePrice,
-    "locked_price": lockedPrice,
-    "purchase_price": purchasePrice,
-    "average_purchase_price": averagePurchasePrice,
-    "current_stock": currentStock,
-    "reorder_level": reorderLevel,
-    "remarks": remarks,
-    "brand": brand,
-    "unit": unit,
-    "tax_id": taxId,
-    "opening_stock": openingStock,
-    "entered_by": enteredBy,
-    "entry_date": entryDate.toIso8601String(),
-    "subgroup": subgroup,
-    "master_item_id": masterItemId,
-    "conversion_qty": conversionQty,
-    "document_id": documentId,
-    "flgdeleted": flgdeleted,
-    "opening_stock_purchase_rate": openingStockPurchaseRate,
-    "tax_percentage": taxPercentage,
-    "basic_rate": basicRate,
-    "flg_weighing_scale_item": flgWeighingScaleItem,
-    "cost_price": costPrice,
-    "kerala_food_cess_percentage": keralaFoodCessPercentage,
-    "gst_tax_percentage": gstTaxPercentage,
-    "cgst_tax_percentage": cgstTaxPercentage,
-    "sgst_tax_percentage": sgstTaxPercentage,
-    "igst_tax_percentage": igstTaxPercentage,
-    "item_name_arabic": itemNameArabic,
-    "itemidx": itemidx,
+    "cost": cost,
+    "tax": tax,
+    "uom_name": uomName,
+    "uom_id": uomId,
+    "reference": reference,
+    "company_name": companyName,
+    "company_id": companyId,
   };
+
+  Result copyWith({
+    int? id,
+    String? name,
+    String? sku,
+    String? barcode,
+    int? erpQuantity,
+    String? productId,
+    String? imageUrl,
+    String? categoryName,
+    int? categoryId,
+    double? salePrice,
+    double? cost,
+    double? tax,
+    String? uomName,
+    int? uomId,
+    String? reference,
+    String? companyName,
+    String? companyId,
+  }) {
+    return Result(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      sku: sku ?? this.sku,
+      barcode: barcode ?? this.barcode,
+      erpQuantity: erpQuantity ?? this.erpQuantity,
+      productId: productId ?? this.productId,
+      imageUrl: imageUrl ?? this.imageUrl,
+      categoryName: categoryName ?? this.categoryName,
+      categoryId: categoryId ?? this.categoryId,
+      salePrice: salePrice ?? this.salePrice,
+      cost: cost ?? this.cost,
+      tax: tax ?? this.tax,
+      uomName: uomName ?? this.uomName,
+      uomId: uomId ?? this.uomId,
+      reference: reference ?? this.reference,
+      companyName: companyName ?? this.companyName,
+      companyId: companyId ?? this.companyId,
+    );
+  }
 }

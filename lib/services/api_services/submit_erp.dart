@@ -7,13 +7,22 @@ import 'package:pda/services/api_services/authservice.dart';
 import 'package:pda/services/api_services/base_api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum ErpBackend { odoo, django }
+
 class SubmitErpService {
   final BaseApiServices _api;
   final Authservice _authservice;
-  SubmitErpService(Future<SharedPreferences> prefs, this._authservice)
-    : _api = BaseApiServices(prefs: prefs, dio: ApiClient.dio);
+  final ErpBackend backend;
 
-  Future<bool> createStockAdjustment({
+  SubmitErpService({
+    required Future<SharedPreferences> prefs,
+    required Authservice authservice,
+    this.backend = ErpBackend.odoo, // Default to Django
+  }) : _authservice = authservice,
+       _api = BaseApiServices(prefs: prefs, dio: ApiClient.dio);
+
+  /// Django-specific stock adjustment
+  Future<bool> _createStockAdjustmentDjango({
     required int itemCode,
     required int countedQuantity,
     required int erpQuantity,
@@ -24,15 +33,21 @@ class SubmitErpService {
       return false;
     }
 
-    final String baseUrl =
+    final String url =
         "http://middleware.febnohost.com/api/v1/waslasoft_retail/items/$itemCode/";
     final queryParams = {"organization_id": "WASL6A81F8A9"};
 
-    final data = {"current_stock": countedQuantity + erpQuantity};
+    // ✅ Match Postman body exactly
+    final Map<String, dynamic> data = {
+      "current_stock": countedQuantity + erpQuantity,
+    };
 
     try {
-      final response = await _api.dio.patch(
-        baseUrl,
+      log("📤 [Django] PATCH $url with $data");
+
+      final response = await Dio().patch(
+        "$url",
+        queryParameters: queryParams,
         data: data,
         options: Options(
           headers: {
@@ -41,29 +56,82 @@ class SubmitErpService {
             "Accept": "application/json",
           },
         ),
-        queryParameters: queryParams,
       );
 
-      final success = response.statusCode == 200;
-      if (success) {
-        log("✅ Stock updated successfully for itemCode: $itemCode");
+      if (response.statusCode == 200) {
+        log("✅ [Django] Stock updated successfully for itemCode: $itemCode");
+        return true;
       } else {
         log(
-          "⚠️ Failed for $itemCode | Status: ${response.statusCode}, Data: ${response.data}",
+          "⚠️ [Django] Failed for $itemCode | Status: ${response.statusCode}, Data: ${response.data}",
         );
+        return false;
       }
-      return success;
     } on DioException catch (e) {
       log(
-        "❌ DioException updating item $itemCode: ${e.response?.statusCode} - ${e.response?.data}",
+        "❌ [Django] DioException updating item $itemCode: ${e.response?.statusCode} - ${e.response?.data}",
       );
       return false;
     } catch (e) {
-      log("❌ Unexpected error updating item $itemCode: $e");
+      log("❌ [Django] Unexpected error updating item $itemCode: $e");
       return false;
     }
   }
 
+  /// Odoo-specific stock adjustment
+  Future<bool> _createStockAdjustmentOdoo({
+    required String productName,
+    required String barcode,
+    required int countedQuantity,
+  }) async {
+    final data = {
+      "jsonrpc": "2.0",
+      "params": {
+        "product_name": productName,
+        "barcode": barcode,
+        "counted_quantity": countedQuantity,
+      },
+    };
+
+    try {
+      final response = await _api.post(
+        endpoint: '/api/create_stock_adjustment',
+        data: data,
+      );
+
+      final success = response?.statusCode == 200;
+      if (success) {
+        log("✅ [Odoo] Stock updated successfully for $productName");
+      } else {
+        log(
+          '⚠️ [Odoo] Failed for $productName (barcode: $barcode): statusCode=${response?.statusCode}, response=${response?.data}',
+        );
+      }
+      return success;
+    } catch (e) {
+      log('❌ [Odoo] Error for $productName (barcode: $barcode): $e');
+      return false;
+    }
+  }
+
+  /// Extract barcode from session data with multiple key attempts
+  String? _extractBarcode(Map<String, dynamic> session, dynamic identifier) {
+    const barcodeKeys = ['barcode', 'Barcode', 'bar_code', 'BARCODE'];
+
+    for (var key in barcodeKeys) {
+      if (session.containsKey(key) &&
+          session[key] is String &&
+          (session[key] as String).isNotEmpty) {
+        return session[key] as String;
+      }
+    }
+
+    // Fallback barcode
+    return 'UNKNOWN_$identifier';
+  }
+
+  /// Unified submission method that handles both backends
+  /// Unified submission method that handles both backends
   Future<Map<String, dynamic>> submitToErp(
     List<Map<String, dynamic>> erpData,
   ) async {
@@ -81,77 +149,95 @@ class SubmitErpService {
       final List<String> skippedProducts = [];
 
       for (final session in erpData) {
-        log('submitToErp: Processing session: $session');
-        final itemCode = session['itemCode'] ?? session['productId'];
-        if (itemCode is! int) {
-          log('submitToErp: Invalid or missing itemCode for session: $session');
-          skippedProducts.add(
-            '${session['productName']} (Missing or invalid itemCode)',
-          );
-          allSuccessful = false;
-          continue;
-        }
+        log('submitToErp [$backend]: Processing session: $session');
 
+        final productName =
+            session['productName'] as String? ?? 'Unknown Product';
         final countedQuantity = session['countedQuantity'] as int? ?? 0;
-        final erpQuantity = session['erpQuantity'] as int? ?? 0;
 
-        // Check for barcode under multiple possible keys
-        String? barcode;
-        for (var key in ['barcode', 'Barcode', 'bar_code', 'BARCODE']) {
-          if (session.containsKey(key) &&
-              session[key] is String &&
-              session[key].isNotEmpty) {
-            barcode = session[key] as String;
-            break;
+        bool success = false;
+
+        // 🧭 Always prefer actual backend setting
+        if (backend == ErpBackend.django) {
+          final itemCode = session['itemCode'] ?? session['productId'];
+          if (itemCode is! int) {
+            log(
+              'submitToErp [Django]: Invalid or missing itemCode for $productName',
+            );
+            skippedProducts.add('$productName (Missing itemCode)');
+            allSuccessful = false;
+            continue;
           }
-        }
 
-        // if (itemCode == null) {
-        //   log('submitToErp: Skipping session, missing itemcode for $itemCode');
-        //   skippedProducts.add('$itemCode (Missing itemcode)');
-        //   allSuccessful = false;
-        //   continue;
-        // }
+          final erpQuantity = session['erpQuantity'] as int? ?? 0;
 
-        if (barcode == null || barcode.isEmpty) {
-          log(
-            'submitToErp: Invalid barcode for $itemCode (productId: $itemCode), barcode: $barcode, session keys: ${session.keys}',
+          // 🧩 Try Django first
+          success = await _createStockAdjustmentDjango(
+            itemCode: itemCode,
+            countedQuantity: countedQuantity,
+            erpQuantity: erpQuantity,
           );
-          barcode = 'UNKNOWN_$itemCode';
-          log('submitToErp: Using fallback barcode: $barcode');
-          skippedProducts.add('$itemCode (Invalid barcode, used $barcode)');
-          // Proceed with fallback barcode
-        }
 
-        log(
-          'submitToErp: Submitting $itemCode (productId: $itemCode, barcode: $barcode, quantity: $countedQuantity)',
-        );
-        final success = await createStockAdjustment(
-          itemCode: itemCode,
-          countedQuantity: countedQuantity,
-          erpQuantity: erpQuantity,
-        );
+          // ⚙️ If Django failed due to missing token, fallback to Odoo
+          if (!success) {
+            final token = await _authservice.getDjangoToken();
+            if (token == null || token.isEmpty) {
+              log(
+                "🔁 No Django token — falling back to Odoo submission for $productName",
+              );
+              final barcode = _extractBarcode(session, itemCode);
+              success = await _createStockAdjustmentOdoo(
+                productName: productName,
+                barcode: barcode ?? 'UNKNOWN_$itemCode',
+                countedQuantity: countedQuantity,
+              );
+            }
+          }
+        } else {
+          // 🧩 Odoo main flow
+          final productId = session['productId'] as int?;
+          if (productId == null) {
+            log(
+              'submitToErp [Odoo]: Skipping session, missing productId for $productName',
+            );
+            skippedProducts.add('$productName (Missing productId)');
+            allSuccessful = false;
+            continue;
+          }
+
+          final barcode = _extractBarcode(session, productId);
+          success = await _createStockAdjustmentOdoo(
+            productName: productName,
+            barcode: barcode ?? 'UNKNOWN_$productId',
+            countedQuantity: countedQuantity,
+          );
+        }
 
         if (!success) {
-          log('submitToErp: Failed to submit $itemCode (productId: $itemCode)');
-          skippedProducts.add('$itemCode (Submission failed)');
+          log('submitToErp [$backend]: Failed to submit $productName');
+          skippedProducts.add('$productName (Submission failed)');
           allSuccessful = false;
         } else {
+          final usedBackend =
+              (backend == ErpBackend.django &&
+                  (await _authservice.getDjangoToken()) == null)
+              ? ErpBackend.odoo
+              : backend;
           log(
-            'submitToErp: Successfully submitted $itemCode (productId: $itemCode)',
+            'submitToErp [${usedBackend.name.toUpperCase()}]: Successfully submitted $productName',
           );
         }
       }
 
       if (allSuccessful) {
-        log('submitToErp: All sessions submitted successfully');
+        log('submitToErp [$backend]: All sessions submitted successfully');
         return {
           'success': true,
           'message': 'Successfully submitted to ERP',
           'skippedProducts': skippedProducts,
         };
       } else {
-        log('submitToErp: Some sessions failed to submit: $skippedProducts');
+        log('submitToErp [$backend]: Some sessions failed: $skippedProducts');
         return {
           'success': false,
           'message': 'Some sessions failed to submit.',
@@ -159,7 +245,7 @@ class SubmitErpService {
         };
       }
     } catch (e) {
-      log('submitToErp: Error submitting sessions: $e');
+      log('submitToErp [$backend]: Error submitting sessions: $e');
       return {
         'success': false,
         'message': 'Error submitting sessions: $e',
@@ -169,10 +255,28 @@ class SubmitErpService {
   }
 }
 
-// Provider for SubmitErpService
+// Providers
 final submitErpServiceProvider = Provider<SubmitErpService>((ref) {
+  // You can make this configurable via SharedPreferences or environment config
   return SubmitErpService(
-    ref.read(sharedPrefsProvider.future),
-    ref.read(authServiceProvider),
+    prefs: ref.read(sharedPrefsProvider.future),
+    authservice: ref.read(authServiceProvider),
+    backend: ErpBackend.django, // Change to ErpBackend.odoo as needed
+  );
+});
+
+// Optional: Provider for backend selection
+final erpBackendProvider = StateProvider<ErpBackend>((ref) {
+  return ErpBackend.django; // Default backend
+});
+
+// Optional: Dynamic provider based on selected backend
+final dynamicSubmitErpServiceProvider = Provider<SubmitErpService>((ref) {
+  final backend = ref.watch(erpBackendProvider);
+
+  return SubmitErpService(
+    prefs: ref.read(sharedPrefsProvider.future),
+    authservice: ref.read(authServiceProvider),
+    backend: backend,
   );
 });

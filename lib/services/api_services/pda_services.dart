@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:pda/constants/apiclient.dart';
 import 'package:pda/services/api_services/base_api_service.dart';
 import 'package:pda/services/api_services/authservice.dart';
 import 'package:pda/utilities/print_function.dart';
@@ -14,81 +15,63 @@ class PdaServices {
       preferences = prefs;
 
   Future<Response?> getAllPda() async {
-    final prefs =
-        await SharedPreferences.getInstance(); // Add this: Assuming _prefs from constructor (SharedPreferences)
+    final prefs = await preferences;
     final db = prefs.getString("db");
     final isOdoo = db != null && db.isNotEmpty;
 
-    String? token;
-    if (!isOdoo) {
-      // ✅ Simple if: Only get token for Django
-      token = await _authService.getDjangoToken();
+    if (isOdoo) {
+      final baseUrl = prefs.getString("erp_url");
+      if (baseUrl == null) {
+        throw Exception("Odoo URL not found. Please log in again.");
+      }
+
+      final fullUrl = "$baseUrl/api/get_products_data";
+
+      final Map<String, dynamic> requestBody = {"jsonrpc": "2.0", "params": {}};
+
+      final cookies = await ApiClient.cookieJar.loadForRequest(
+        Uri.parse(baseUrl),
+      );
+      printOrLog("🍪 Cookies being sent:");
+      for (var cookie in cookies) {
+        printOrLog("  ${cookie.name} = ${cookie.value}");
+      }
+
+      // ✅ Add detailed logging
+      printOrLog("🔍 Odoo Request Details:");
+      printOrLog("  Full URL: $fullUrl");
+      printOrLog("  Database: $db");
+      printOrLog("  Request Body: $requestBody");
+
+      final response = await ApiClient.dio.request(
+        fullUrl,
+        options: Options(
+          method: 'GET',
+          headers: {"Content-Type": "application/json"},
+        ),
+        data: requestBody,
+      );
+
+      printOrLog("📡 Response Status: ${response.statusCode}");
+      printOrLog("📦 Response Data: ${response.data}");
+
+      return response;
+    } else {
+      // Django code...
+      String? token = await _authService.getDjangoToken();
+
       if (token == null || token.isEmpty) {
         throw Exception("Django token not found. Please log in again.");
       }
-      printOrLog("🔑 Token: ${token.substring(0, 20)}...");
-    } else {
-      printOrLog("🍪 Odoo detected—skipping token, using session cookies.");
+
+      return await _api.get(
+        endpoint: '/api/v1/waslasoft_retail/items/',
+        headers: {
+          'Authorization': 'Token $token',
+          "Accept": "application/json",
+        },
+        queryParameters: {'organization_id': 'WASL6A81F8A9'},
+      );
     }
-
-    printOrLog("🔄 Fetching products from API (${isOdoo ? 'Odoo' : 'Django'})");
-
-    // Build headers conditionally
-    final Map<String, String> headers = {
-      "Accept": "application/json",
-      if (!isOdoo && token != null)
-        'Authorization': 'Token $token', // ✅ Only for Django
-    };
-
-    final response = await _api.get(
-      endpoint: 'api/v1/waslasoft_retail/items/',
-      headers: headers,
-      queryParameters: {'organization_id': 'WASL6A81F8A9'},
-    );
-
-    printOrLog("📡 Response Status: ${response?.statusCode}");
-
-    // ✅ Handle 401 - Only for Django (skip refresh for Odoo)
-    if (response?.statusCode == 401 && !isOdoo) {
-      printOrLog("⚠️ Token invalid (401), attempting to refresh...");
-      token = await _authService.refreshDjangoToken();
-      if (token != null) {
-        printOrLog("🔄 Retrying with refreshed token...");
-        return await _api.get(
-          endpoint: 'api/v1/waslasoft_retail/items/',
-          headers: {
-            'Authorization': 'Token $token',
-            "Accept": "application/json",
-          },
-          queryParameters: {'organization_id': 'WASL6A81F8A9'},
-        );
-      } else {
-        throw Exception(
-          "Token expired and refresh failed. Please log in again.",
-        );
-      }
-    } else if (response?.statusCode == 401 && isOdoo) {
-      // Odoo: Session expired
-      printOrLog("⚠️ Odoo session expired (401). Please log in again.");
-      throw Exception("Odoo session expired. Please log in again.");
-    }
-
-    if (response?.data != null) {
-      if (response!.data is Map) {
-        printOrLog(
-          "📦 Response is a Map with keys: ${(response.data as Map).keys}",
-        );
-        if ((response.data as Map).containsKey('data')) {
-          final dataList = (response.data as Map)['data'];
-          printOrLog(
-            "📊 Data array length: ${dataList is List ? dataList.length : 'not a list'}",
-          );
-        }
-      }
-    } else {
-      printOrLog("⚠️ Response data is null");
-    }
-
-    return response;
   }
 }
