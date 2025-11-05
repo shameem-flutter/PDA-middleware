@@ -415,6 +415,11 @@ class DatabaseHelper {
     await deleteAllCountingSessions();
   }
 
+  Future<void> clearProducts() async {
+    final db = await database;
+    await db.delete("products");
+  }
+
   // ---------------- Streams for Riverpod ----------------
   Stream<CountingSession?> watchCountingSessionByProductId(int productId) {
     final controller = StreamController<CountingSession?>.broadcast();

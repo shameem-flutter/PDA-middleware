@@ -1,8 +1,6 @@
 import 'dart:developer';
 import 'package:dio/dio.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pda/constants/apiclient.dart';
-import 'package:pda/providers/providers.dart';
 import 'package:pda/services/api_services/authservice.dart';
 import 'package:pda/services/api_services/base_api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,7 +15,7 @@ class SubmitErpService {
   SubmitErpService({
     required Future<SharedPreferences> prefs,
     required Authservice authservice,
-    this.backend = ErpBackend.odoo, // Default to Django
+    required this.backend,
   }) : _authservice = authservice,
        _api = BaseApiServices(prefs: prefs, dio: ApiClient.dio);
 
@@ -27,14 +25,19 @@ class SubmitErpService {
     required int countedQuantity,
     required int erpQuantity,
   }) async {
-    final String? token = await _authservice.getDjangoToken();
-    if (token == null) {
-      log("❌ No Django token found. User might not be logged in.");
+    final prefs = await SharedPreferences.getInstance();
+    final baseUrl = prefs.getString('erp_url');
+
+    if (baseUrl == null) {
+      log("❌ No [Django] erp_url  found. missing in sharedpreferences.");
       return false;
     }
+    final token = await _authservice.getDjangoToken();
+    if (token == null || token.isEmpty) {
+      log("[django] token missing");
+    }
 
-    final String url =
-        "http://middleware.febnohost.com/api/v1/waslasoft_retail/items/$itemCode/";
+    final String url = "$baseUrl/api/v1/waslasoft_retail/items/$itemCode/";
     final queryParams = {"organization_id": "WASL6A81F8A9"};
 
     // ✅ Match Postman body exactly
@@ -45,8 +48,8 @@ class SubmitErpService {
     try {
       log("📤 [Django] PATCH $url with $data");
 
-      final response = await Dio().patch(
-        "$url",
+      final response = await ApiClient.dio.patch(
+        url,
         queryParameters: queryParams,
         data: data,
         options: Options(
@@ -254,29 +257,3 @@ class SubmitErpService {
     }
   }
 }
-
-// Providers
-final submitErpServiceProvider = Provider<SubmitErpService>((ref) {
-  // You can make this configurable via SharedPreferences or environment config
-  return SubmitErpService(
-    prefs: ref.read(sharedPrefsProvider.future),
-    authservice: ref.read(authServiceProvider),
-    backend: ErpBackend.django, // Change to ErpBackend.odoo as needed
-  );
-});
-
-// Optional: Provider for backend selection
-final erpBackendProvider = StateProvider<ErpBackend>((ref) {
-  return ErpBackend.django; // Default backend
-});
-
-// Optional: Dynamic provider based on selected backend
-final dynamicSubmitErpServiceProvider = Provider<SubmitErpService>((ref) {
-  final backend = ref.watch(erpBackendProvider);
-
-  return SubmitErpService(
-    prefs: ref.read(sharedPrefsProvider.future),
-    authservice: ref.read(authServiceProvider),
-    backend: backend,
-  );
-});

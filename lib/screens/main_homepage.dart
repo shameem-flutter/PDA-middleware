@@ -27,7 +27,7 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
           builder: (context, constraints) {
             final screenWidth = constraints.maxWidth;
             final crossAxisCount = screenWidth > 600 ? 3 : 2;
-            final horizontalPadding = screenWidth > 600 ? 40.0 : 20.0;
+            final horizontalPadding = screenWidth > 600 ? 40.0 : 15.0;
 
             return SingleChildScrollView(
               child: Padding(
@@ -61,8 +61,8 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       crossAxisCount: crossAxisCount,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 20,
+                      crossAxisSpacing: 0,
+                      mainAxisSpacing: 0,
                       childAspectRatio: 0.90,
                       children: [
                         _buildGridItem(
@@ -205,11 +205,7 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (imagePath != null)
-                Image.asset(
-                  imagePath,
-                  height: 120, // increased image height
-                  fit: BoxFit.contain,
-                )
+                Image.asset(imagePath, height: 120, fit: BoxFit.contain)
               else if (icon != null) ...[
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 13),

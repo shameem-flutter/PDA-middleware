@@ -9,12 +9,32 @@ class Authservice {
   final Future<SharedPreferences> _prefs;
   Authservice(this._prefs);
 
+  Future<void> _switchBackend({
+    required SharedPreferences prefs,
+    required String backend, // "django" or "odoo"
+  }) async {
+    // Clear old backend credentials
+    await prefs.remove("token"); // Django
+    await prefs.remove("session_id"); // Odoo
+    await prefs.remove("db"); // Odoo
+
+    // Save new backend flag
+    await prefs.setString("backend", backend);
+
+    // Clear cookies to avoid mixing sessions
+    try {
+      await ApiClient.cookieJar.deleteAll();
+    } catch (_) {}
+
+    log("✅ Switched backend to $backend");
+  }
+
   Future<bool> loginWithDjango({
     required String username,
     required String password,
     required String baseUrl,
   }) async {
-    final Dio dio = Dio();
+    final Dio dio = ApiClient.dio;
     final String url = "$baseUrl/api/login/";
 
     try {
@@ -46,6 +66,7 @@ class Authservice {
 
         if (token != null && token.isNotEmpty) {
           final prefs = await _prefs;
+          await _switchBackend(prefs: prefs, backend: "odoo");
           await prefs.setString("username", username);
           await prefs.setString("password", password);
           await prefs.setString("erp_url", baseUrl);

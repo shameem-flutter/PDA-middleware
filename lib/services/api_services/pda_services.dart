@@ -16,10 +16,9 @@ class PdaServices {
 
   Future<Response?> getAllPda() async {
     final prefs = await preferences;
-    final db = prefs.getString("db");
-    final isOdoo = db != null && db.isNotEmpty;
+    final backend = prefs.getString("backend");
 
-    if (isOdoo) {
+    if (backend == "odoo") {
       final baseUrl = prefs.getString("erp_url");
       if (baseUrl == null) {
         throw Exception("Odoo URL not found. Please log in again.");
@@ -40,7 +39,7 @@ class PdaServices {
       // ✅ Add detailed logging
       printOrLog("🔍 Odoo Request Details:");
       printOrLog("  Full URL: $fullUrl");
-      printOrLog("  Database: $db");
+
       printOrLog("  Request Body: $requestBody");
 
       final response = await ApiClient.dio.request(
@@ -56,7 +55,7 @@ class PdaServices {
       printOrLog("📦 Response Data: ${response.data}");
 
       return response;
-    } else {
+    } else if (backend == "django") {
       // Django code...
       String? token = await _authService.getDjangoToken();
 
@@ -72,6 +71,8 @@ class PdaServices {
         },
         queryParameters: {'organization_id': 'WASL6A81F8A9'},
       );
+    } else {
+      throw Exception("Backend not selected. please log in again");
     }
   }
 }

@@ -39,34 +39,19 @@ final pdaServicesProvider = Provider<PdaServices>((ref) {
 // In providers.dart - Replace the erpBackendProvider
 final erpBackendProvider = FutureProvider<ErpBackend>((ref) async {
   final prefs = await ref.read(sharedPrefsProvider.future);
-  final token = prefs.getString("token");
-  final sessionId = prefs.getString("session_id");
-  final db = prefs.getString("db");
   final backend = prefs.getString('backend');
 
   if (backend == 'django') {
-    log('backend forced to django (saved in prefs)');
+    log('✅ Backend: Django (from prefs)');
     return ErpBackend.django;
-  } else if (backend == 'odoo') {
-    log('backend forced to odoo');
+  }
+  if (backend == 'odoo') {
+    log('✅ Backend: Odoo (from prefs)');
     return ErpBackend.odoo;
   }
 
-  // If we have a Django token, use Django
-  if (token != null && token.isNotEmpty) {
-    log("🔧 Detected Django backend (token found)");
-    return ErpBackend.django;
-  }
-
-  // If we have Odoo session_id or db, use Odoo
-  if ((sessionId != null && sessionId.isNotEmpty) ||
-      (db != null && db.isNotEmpty)) {
-    log("🔧 Detected Odoo backend (session_id or db found)");
-    return ErpBackend.odoo;
-  }
-
-  // Default to Django if nothing found
-  log("⚠️ No backend detected, defaulting to Django");
+  // Default fallback — force login screen instead of guessing
+  log("❌ No backend stored. User must login again.");
   return ErpBackend.django;
 });
 
@@ -157,7 +142,6 @@ class AuthNotifier extends Notifier<AuthState> {
     final erpUrl = prefs.getString("erp_url");
     final userName = prefs.getString("username");
     final sessionId = prefs.getString("session_id");
-    final db = prefs.getString("db");
     final backend = prefs.getString("backend");
 
     final hasCredentials =
@@ -178,27 +162,18 @@ class AuthNotifier extends Notifier<AuthState> {
 
     // ✅ Additional validation: Check if we have backend info
     if (backend == null || backend.isEmpty) {
-      log("⚠️ Session exists but no backend info - likely stale session");
+      log("❌ Backend info missing — stale session. Clearing and logging out");
 
-      // Try to infer backend from available data
-      if (token != null && token.isNotEmpty) {
-        log("🔧 Found token, assuming Django backend");
-        await prefs.setString("backend", "django");
-      } else if (sessionId != null && sessionId.isNotEmpty && db != null) {
-        log("🔧 Found session_id and db, assuming Odoo backend");
-        await prefs.setString("backend", "odoo");
-      } else {
-        // Can't determine backend, clear everything
-        log("❌ Cannot determine backend - clearing stale data");
-        await prefs.clear();
-        state = state.copyWith(
-          isLoggedIn: false,
-          userName: null,
-          erpUrl: null,
-          isLoading: false,
-        );
-        return;
-      }
+      await prefs.clear();
+      await ApiClient.cookieJar.deleteAll();
+
+      state = state.copyWith(
+        isLoggedIn: false,
+        userName: null,
+        erpUrl: null,
+        isLoading: false,
+      );
+      return;
     }
 
     // ✅ Restore session
@@ -226,6 +201,9 @@ class AuthNotifier extends Notifier<AuthState> {
     try {
       state = state.copyWith(isLoading: true);
 
+      final prefs = await ref.read(sharedPrefsProvider.future);
+      final oldBackend = prefs.getString('backend');
+
       final authService = ref.read(authServiceProvider);
       final success = await authService.login(
         username: username,
@@ -240,7 +218,19 @@ class AuthNotifier extends Notifier<AuthState> {
         return false;
       }
 
-      final prefs = await ref.read(sharedPrefsProvider.future);
+      final newBackend = success ? prefs.getString('backend') : null;
+
+      if (oldBackend != null &&
+          newBackend != null &&
+          oldBackend != newBackend) {
+        log('backend Switched $oldBackend to $newBackend, clearing local db');
+        final dbHelper = ref.read(dbProvider);
+        await dbHelper.clearCountingSessions();
+        await dbHelper.clearProducts();
+        ref.read(sessionsNotifierProvider.notifier).reset();
+        ref.invalidate(productsNotifierProvider);
+      }
+
       final token = prefs.getString("token");
       final sessionId = prefs.getString("session_id");
       if ((token == null || token.isEmpty) &&
@@ -265,6 +255,9 @@ class AuthNotifier extends Notifier<AuthState> {
       log("Login successful with  token: $token");
 
       // Optionally trigger product sync
+
+      ref.invalidate(sessionsNotifierProvider);
+      ref.invalidate(productsNotifierProvider);
       await ref.read(productsNotifierProvider.notifier).syncProducts();
 
       state = state.copyWith(
@@ -283,6 +276,21 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<void> logout() async {
+    final dbHelper = ref.read(dbProvider);
+
+    await dbHelper.clearCountingSessions();
+    await dbHelper.clearProducts();
+
+    ref.read(sessionsNotifierProvider.notifier).reset();
+
+    ref.invalidate(sessionsNotifierProvider);
+    ref.invalidate(productsNotifierProvider);
+    ref.invalidate(erpBackendProvider);
+    ref.invalidate(dynamicSubmitErpServiceProvider);
+
+    final prefs = await ref.read(sharedPrefsProvider.future);
+    await prefs.remove('backend');
+
     await ref.read(authServiceProvider).logOut();
     state = state.copyWith(isLoggedIn: false, userName: null, erpUrl: null);
   }
@@ -615,6 +623,10 @@ class SessionsNotifier extends AsyncNotifier<List<CountingSession>> {
         'skippedProducts': [],
       };
     }
+  }
+
+  void reset() {
+    state = const AsyncData([]); // hard reset session list
   }
 }
 
