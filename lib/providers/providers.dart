@@ -19,6 +19,7 @@ final sharedPrefsProvider = FutureProvider<SharedPreferences>((ref) async {
   await prefs.reload();
   return prefs;
 });
+final isLoggingOutProvider = StateProvider<bool>((ref) => false);
 
 // Database Helper Provider
 final dbProvider = Provider<DatabaseHelper>((ref) => DatabaseHelper());
@@ -194,7 +195,7 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<bool> login({
     required String username,
-    String? db,
+    required String db,
     required String password,
     required String baseUrl,
   }) async {
@@ -211,6 +212,10 @@ class AuthNotifier extends Notifier<AuthState> {
         password: password,
         baseUrl: baseUrl,
       );
+
+      if (db.isNotEmpty) {
+        await prefs.setString("organization_id", db);
+      }
 
       if (!success) {
         log("Login failed: Invalid credentials or server error");
@@ -252,6 +257,9 @@ class AuthNotifier extends Notifier<AuthState> {
 
       // Save user info in prefs
       await prefs.setString("username", username);
+      if (db.isNotEmpty) {
+        await prefs.setString("organization_id", db);
+      }
       log("Login successful with  token: $token");
 
       // Optionally trigger product sync
@@ -280,7 +288,7 @@ class AuthNotifier extends Notifier<AuthState> {
 
     await dbHelper.clearCountingSessions();
     await dbHelper.clearProducts();
-
+    ref.read(isLoggingOutProvider.notifier).state = true;
     ref.read(sessionsNotifierProvider.notifier).reset();
 
     ref.invalidate(sessionsNotifierProvider);
@@ -310,6 +318,11 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
   Future<List<Product>> _loadProducts() async {
     final dbHelper = ref.read(dbProvider);
     final pdaServices = ref.read(pdaServicesProvider);
+    final isLoggingOut = ref.read(isLoggingOutProvider);
+    if (isLoggingOut) {
+      log("⛔ Logout in progress — skip product loading");
+      return state.value ?? []; // keep existing list
+    }
 
     try {
       final response = await pdaServices.getAllPda();
@@ -370,9 +383,19 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
 
       return productsFromApi;
     } catch (e, st) {
-      printOrLog("❌ Error loading products: $e");
+      printOrLog("⚠️ Error loading products (maybe logging out): $e");
+
       final cached = await dbHelper.getProducts();
       if (cached.isNotEmpty) return cached;
+
+      // If user is logging out, do not throw UI errors
+      final prefs = await ref.read(sharedPrefsProvider.future);
+      final backend = prefs.getString("backend");
+      if (backend == null) {
+        printOrLog("⛔ Skip product error — user logged out");
+        return [];
+      }
+
       state = AsyncError(e, st);
       rethrow;
     }

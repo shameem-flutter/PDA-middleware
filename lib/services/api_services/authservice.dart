@@ -168,6 +168,7 @@ class Authservice {
         await prefs.setString("username", username);
         await prefs.setString("erp_url", baseUrl);
         await prefs.setString("db", db);
+        await prefs.setString("organization_id", db);
 
         var sessionId = response.data['result']['session_id'];
         if (sessionId == null) {
@@ -211,33 +212,51 @@ class Authservice {
 
   Future<bool> login({
     required String baseUrl,
-    String? db,
+    required String db,
     required String username,
     required String password,
   }) async {
-    final djangoSuccess = await loginWithDjango(
-      username: username,
-      password: password,
-      baseUrl: baseUrl,
-    );
-    if (djangoSuccess) {
-      final prefs = await _prefs;
-      await prefs.setString('backend', 'django');
-      return true;
+    if (db.isEmpty) {
+      log("log in failed db/ organization id is required");
+      return false;
     }
-    if (db != null && db.isNotEmpty) {
-      final odooSuccess = await loginWithOdoo(
-        baseUrl: baseUrl,
-        db: db,
+
+    final prefs = await _prefs;
+    final bool isDjango = baseUrl.contains("http://middleware.febnohost.com");
+
+    if (isDjango) {
+      final djangoSuccess = await loginWithDjango(
         username: username,
         password: password,
+        baseUrl: baseUrl,
       );
-      if (odooSuccess) {
-        final prefs = await _prefs;
-        await prefs.setString('backend', 'odoo');
+      if (djangoSuccess) {
+        await prefs.setString('backend', 'django');
+        await prefs.setString("organization_id", db);
+        log("django login success");
         return true;
       }
+      log("Django login failed");
+      return false;
     }
+
+    log("Odoo login selected");
+
+    final odooSuccess = await loginWithOdoo(
+      baseUrl: baseUrl,
+      db: db,
+      username: username,
+      password: password,
+    );
+    if (odooSuccess) {
+      final prefs = await _prefs;
+      await prefs.setString('backend', 'odoo');
+      await prefs.setString("db", db);
+      await prefs.setString("organization_id", db);
+      log("log in with odoo success");
+      return true;
+    }
+
     return false;
   }
 

@@ -17,6 +17,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authNotifierProvider);
+    final prefsAsync = ref.watch(sharedPrefsProvider);
+    String? displayDb;
+
+    if (prefsAsync.asData != null) {
+      final prefs = prefsAsync.asData!.value;
+      final odooDb = prefs.getString("db");
+      final orgId = prefs.getString("organization_id");
+
+      if (odooDb == null || odooDb.isEmpty) {
+        displayDb = orgId;
+      } else if (orgId == null || orgId.isNotEmpty) {
+        displayDb = odooDb;
+      } else {
+        displayDb = "N/A";
+      }
+    } else {
+      displayDb = "loading...";
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -38,7 +56,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           children: [
             _buildSettingCard("User-Name", authState.userName, Icons.person),
             _buildSettingCard("ERP-URL", authState.erpUrl, Icons.mail),
-            _buildSettingCard("DATABASE", authState.token, Symbols.database),
+            _buildSettingCard(
+              "DATABASE / CLIENT CODE",
+              displayDb,
+              Symbols.database,
+            ),
             // vertGap(0),
             logOut("Log-Out", Icons.logout),
           ],

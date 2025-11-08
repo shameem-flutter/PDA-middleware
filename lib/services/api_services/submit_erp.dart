@@ -27,6 +27,7 @@ class SubmitErpService {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final baseUrl = prefs.getString('erp_url');
+    final orgId = prefs.getString('organization_id');
 
     if (baseUrl == null) {
       log("❌ No [Django] erp_url  found. missing in sharedpreferences.");
@@ -37,8 +38,13 @@ class SubmitErpService {
       log("[django] token missing");
     }
 
+    if (orgId == null || orgId.isEmpty) {
+      log("[django] organization_id is missing from SharedPreferences");
+      return false;
+    }
+
     final String url = "$baseUrl/api/v1/waslasoft_retail/items/$itemCode/";
-    final queryParams = {"organization_id": "WASL6A81F8A9"};
+    final queryParams = {"organization_id": orgId};
 
     // ✅ Match Postman body exactly
     final Map<String, dynamic> data = {

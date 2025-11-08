@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:dio/dio.dart';
 import 'package:pda/constants/apiclient.dart';
 import 'package:pda/services/api_services/base_api_service.dart';
@@ -56,6 +58,10 @@ class PdaServices {
 
       return response;
     } else if (backend == "django") {
+      final orgId = prefs.getString('organization_id');
+      if (orgId == null || orgId.isEmpty) {
+        log('[django] organization_id is missing from SharedPreferneces');
+      }
       // Django code...
       String? token = await _authService.getDjangoToken();
 
@@ -69,10 +75,11 @@ class PdaServices {
           'Authorization': 'Token $token',
           "Accept": "application/json",
         },
-        queryParameters: {'organization_id': 'WASL6A81F8A9'},
+        queryParameters: {'organization_id': orgId},
       );
     } else {
-      throw Exception("Backend not selected. please log in again");
+      log("⚠️ Backend missing while fetching products — probably logging out");
+      return null;
     }
   }
 }

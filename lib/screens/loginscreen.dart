@@ -38,8 +38,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
 
     log('Log in button pressed!');
-    final db = _dbController.text.trim();
-    final dbParam = db.isEmpty ? null : db;
+
+    final dbParam = _dbController.text.trim();
     final success = await ref
         .read(authNotifierProvider.notifier)
         .login(
@@ -139,12 +139,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                       CustomFormField(
                         controller: _dbController,
-                        validate: false,
+                        validate: true,
                         validator: (value) => value == null || value.isEmpty
-                            ? "Enter database name"
+                            ? "Enter database name / Client Id"
                             : null,
-                        hintText: "Company database",
-                        title: "Database (odoo only)",
+                        hintText: "Company Database",
+                        title: "Database / Client Id",
                       ),
                       vertGap(10),
 
