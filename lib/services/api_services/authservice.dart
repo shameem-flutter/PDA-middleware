@@ -66,7 +66,8 @@ class Authservice {
 
         if (token != null && token.isNotEmpty) {
           final prefs = await _prefs;
-          await _switchBackend(prefs: prefs, backend: "odoo");
+          // 🔧 FIX #1: Changed from "odoo" to "django"
+          await _switchBackend(prefs: prefs, backend: "django");
           await prefs.setString("username", username);
           await prefs.setString("password", password);
           await prefs.setString("erp_url", baseUrl);
@@ -97,18 +98,20 @@ class Authservice {
     final password = prefs.getString("password");
     final baseUrl = prefs.getString("erp_url");
 
-    if (username == null || password == null) {
-      log("❌ Cannot refresh token — missing credentials.");
+    // 🔧 FIX #2: Added baseUrl null check
+    if (username == null || password == null || baseUrl == null) {
+      log("❌ Cannot refresh token — missing credentials or base URL.");
       return null;
     }
 
     log("🔄 Refreshing Django token...");
     await prefs.remove('token');
 
+    // 🔧 FIX #3: Removed unnecessary .toString()
     final success = await loginWithDjango(
       username: username,
       password: password,
-      baseUrl: baseUrl.toString(),
+      baseUrl: baseUrl,
     );
     if (success) {
       final newToken = prefs.getString('token');
@@ -190,8 +193,7 @@ class Authservice {
           final sessionCookie = Cookie("session_id", sessionId);
           await ApiClient.cookieJar.saveFromResponse(uri, [sessionCookie]);
           await prefs.setString("session_id", sessionId);
-          await prefs.setString("erp_url", baseUrl);
-          await prefs.setString("db", db);
+          // 🔧 FIX #4: Removed duplicate lines (erp_url and db already set above)
           return true;
         } else {
           log("⚠️ No session_id found in JSON or cookies.");
@@ -222,7 +224,10 @@ class Authservice {
     }
 
     final prefs = await _prefs;
-    final bool isDjango = baseUrl.contains("http://middleware.febnohost.com");
+    // 🔧 IMPROVEMENT: More flexible Django detection
+    final bool isDjango =
+        baseUrl.contains("middleware.febnohost.com") ||
+        baseUrl.contains("/api/login/");
 
     if (isDjango) {
       final djangoSuccess = await loginWithDjango(
@@ -249,10 +254,8 @@ class Authservice {
       password: password,
     );
     if (odooSuccess) {
-      final prefs = await _prefs;
       await prefs.setString('backend', 'odoo');
-      await prefs.setString("db", db);
-      await prefs.setString("organization_id", db);
+      // organization_id already set in loginWithOdoo
       log("log in with odoo success");
       return true;
     }
@@ -336,42 +339,33 @@ class Authservice {
       }
 
       try {
-        // Clear all SharedPreferences - Method 1: Individual removes
-        await prefs.remove("token");
-        await prefs.remove("session_id");
-        await prefs.remove("erp_url");
-        await prefs.remove("db");
-        await prefs.remove("username");
-        await prefs.remove("password");
-        await prefs.remove("backend");
+        // 🔧 FIX #5: Added organization_id to cleanup list
+        final keysToRemove = [
+          "token",
+          "session_id",
+          "erp_url",
+          "db",
+          "username",
+          "password",
+          "backend",
+          "organization_id",
+          "first_run",
+        ];
 
-        // Also clear any other app-specific keys you might have
-        await prefs.remove("first_run");
+        for (final key in keysToRemove) {
+          await prefs.remove(key);
+        }
 
         log("✅ SharedPreferences cleared (individual keys)");
       } catch (e) {
         log("⚠️ Error clearing individual keys: $e");
       }
 
-      try {
-        // Clear all SharedPreferences - Method 2: Clear everything (more thorough)
-        final allKeys = prefs.getKeys();
-        log("🔍 Clearing ${allKeys.length} SharedPreferences keys: $allKeys");
-
-        for (final key in allKeys) {
-          await prefs.remove(key);
-        }
-
-        log("✅ All SharedPreferences cleared");
-      } catch (e) {
-        log("⚠️ Error clearing all SharedPreferences: $e");
-      }
-
       log("✅ Logout complete - all local session data cleared.");
     }
   }
 
-  /// ✅ NEW: Check if user has valid credentials
+  /// ✅ Check if user has valid credentials
   Future<bool> hasValidSession() async {
     final prefs = await _prefs;
     final token = prefs.getString("token");
@@ -393,13 +387,19 @@ class Authservice {
     return (await _prefs).getString("session_id");
   }
 
-  /// ✅ NEW: Get current backend type
+  /// ✅ Get current backend type
   Future<String?> getBackend() async {
     final prefs = await _prefs;
     return prefs.getString("backend");
   }
 
-  /// ✅ NEW: Refresh token (works for both backends)
+  /// ✅ Get organization ID
+  Future<String?> getOrganizationId() async {
+    final prefs = await _prefs;
+    return prefs.getString("organization_id");
+  }
+
+  /// ✅ Refresh token (works for both backends)
   Future<bool> refreshToken() async {
     final backend = await getBackend();
 

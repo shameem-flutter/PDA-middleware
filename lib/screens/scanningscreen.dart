@@ -140,6 +140,7 @@ class _ScanningScreenState extends ConsumerState<ScanningScreen>
 
       _dwSubscription = _dataWedge.onScanResult.listen(
         (scanResult) {
+          if (!mounted || isScanned) return;
           final code = scanResult.data.trim();
           if (code.isNotEmpty && !isScanned) {
             debugPrint("📡 Zebra Scan Detected: $code");
@@ -188,6 +189,7 @@ class _ScanningScreenState extends ConsumerState<ScanningScreen>
       _scannedBuffer += keyLabel;
       _bufferTimer?.cancel();
       _bufferTimer = Timer(const Duration(milliseconds: 200), () {
+        if (!mounted) return;
         if (_scannedBuffer.isNotEmpty && !isScanned) {
           final code = _scannedBuffer.trim();
           if (code.length >= 8) {
@@ -252,6 +254,7 @@ class _ScanningScreenState extends ConsumerState<ScanningScreen>
   Future<void> _onCodeDetected(String code) async {
     final messenger = ScaffoldMessenger.of(context);
     if (isScanned) return;
+    if (!mounted) return;
     setState(() => isScanned = true);
     debugPrint("🎯 Processing barcode: $code");
 
@@ -352,10 +355,12 @@ class _ScanningScreenState extends ConsumerState<ScanningScreen>
 
     // Navigation listener
     ref.listen<int>(navbarIndexProvider, (prev, next) async {
+      if (!mounted) return;
       if (next != 2) {
         // Not on scanning tab - stop camera
         if (_isCameraStarted) {
           await _cameraController?.stop();
+          if (!mounted) return;
           setState(() {
             _isCameraStarted = false;
           });
@@ -375,13 +380,15 @@ class _ScanningScreenState extends ConsumerState<ScanningScreen>
 
     // Scan request listener
     ref.listen(scanRequestProvider, (previous, next) async {
+      if (!mounted) return;
       if (next && !_useHardwareScanner && _isControllerInitialized) {
         await Future.delayed(const Duration(milliseconds: 100));
         if (mounted && !_isCameraStarted) {
           await _startScanner();
         }
-
-        ref.read(scanRequestProvider.notifier).state = false;
+        if (mounted) {
+          ref.read(scanRequestProvider.notifier).state = false;
+        }
       }
     });
 
@@ -402,6 +409,7 @@ class _ScanningScreenState extends ConsumerState<ScanningScreen>
                 onPressed: () async {
                   if (_isCameraStarted) {
                     await _cameraController?.stop();
+                    if (!mounted) return;
                     setState(() {
                       _isCameraStarted = false;
                     });
