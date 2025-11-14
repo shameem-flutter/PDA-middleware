@@ -146,7 +146,7 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
                 await ref.read(authNotifierProvider.notifier).logout();
 
                 if (context.mounted) {
-                  navigator.pop(); // close loading
+                  navigator.pop();
                   navigator.pushAndRemoveUntil(
                     MaterialPageRoute(
                       builder: (_) =>

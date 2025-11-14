@@ -217,6 +217,10 @@ class AuthNotifier extends Notifier<AuthState> {
         await prefs.setString("organization_id", db);
       }
 
+      if (success) {
+        ref.read(isLoggingOutProvider.notifier).state = false;
+      }
+
       if (!success) {
         log("Login failed: Invalid credentials or server error");
         state = state.copyWith(isLoading: false);

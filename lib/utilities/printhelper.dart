@@ -36,15 +36,15 @@ Future<void> printBarcodePdf({
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text(
-                  companyName,
-                  maxLines: isSmallFormat ? 1 : 2,
-                  textAlign: pw.TextAlign.start,
-                  style: pw.TextStyle(
-                    fontSize: fontSize,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
+                // pw.Text(
+                //   companyName,
+                //   maxLines: isSmallFormat ? 1 : 2,
+                //   textAlign: pw.TextAlign.start,
+                //   style: pw.TextStyle(
+                //     fontSize: fontSize,
+                //     fontWeight: pw.FontWeight.bold,
+                //   ),
+                // ),
                 pw.Text(
                   productName,
                   maxLines: 1,

@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 import 'package:pda/constants/api_endpoints.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
-import 'package:pda/utilities/print_function.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiClient {
@@ -27,11 +26,41 @@ class ApiClient {
     final dynamicUrl = await apiEndPoints.actKeybaseUrl;
 
     dio.options.baseUrl = dynamicUrl;
-
-    printOrLog("updated dio BASEURL : $dynamicUrl");
   }
 
   static void updateBaseUrl(String newUrl) {
     dio.options.baseUrl = newUrl;
+  }
+
+  static Future<void> clearCookiesForUrl(String baseUrl) async {
+    try {
+      final uri = Uri.parse(baseUrl);
+
+      await cookieJar.delete(uri);
+
+      await cookieJar.delete(
+        Uri(
+          scheme: uri.scheme == 'https' ? 'http' : 'https',
+          host: uri.host,
+          path: '/',
+        ),
+      );
+
+      await cookieJar.delete(
+        Uri(scheme: uri.scheme, host: uri.host, path: '/'),
+      );
+
+      await cookieJar.deleteAll();
+    } catch (_) {
+      try {
+        await cookieJar.deleteAll();
+      } catch (_) {}
+    }
+  }
+
+  static Future<void> clearAllCookies() async {
+    try {
+      await cookieJar.deleteAll();
+    } catch (_) {}
   }
 }
