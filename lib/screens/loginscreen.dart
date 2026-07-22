@@ -54,7 +54,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Logged-in successfuly"),
+            content: const Text("Logged in successfully"),
             duration: Duration(milliseconds: 500),
             backgroundColor: successColor,
             shape: RoundedRectangleBorder(
@@ -172,45 +172,48 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       vertGap(20),
 
                       SizedBox(
-                        width: 333,
+                        width: double.infinity,
                         height: 50,
-                        child: ElevatedButton(
-                          onPressed: authState.isLoading ? null : _handleLogin,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: primaryColor,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: ElevatedButton(
+                            onPressed: authState.isLoading ? null : _handleLogin,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryColor,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
-                          ),
-                          child: authState.isLoading
-                              ? Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        color: primaryColor,
-                                        strokeWidth: 2,
+                            child: authState.isLoading
+                                ? Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          color: onSecondaryColor,
+                                          strokeWidth: 2,
+                                        ),
                                       ),
-                                    ),
-                                    horiGap(12),
-                                    Text(
-                                      "Logging in...",
-                                      style: TextStyle(
-                                        color: primaryColor,
-                                        fontSize: 16,
+                                      horiGap(12),
+                                      Text(
+                                        "Logging in...",
+                                        style: TextStyle(
+                                          color: onSecondaryColor,
+                                          fontSize: 16,
+                                        ),
                                       ),
+                                    ],
+                                  )
+                                : const Text(
+                                    "Login to ERP",
+                                    style: TextStyle(
+                                      color: onSecondaryColor,
+                                      fontSize: 17,
                                     ),
-                                  ],
-                                )
-                              : const Text(
-                                  "Login to ERP",
-                                  style: TextStyle(
-                                    color: onSecondaryColor,
-                                    fontSize: 17,
                                   ),
-                                ),
+                          ),
                         ),
                       ),
                     ],

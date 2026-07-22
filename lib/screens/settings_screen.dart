@@ -26,11 +26,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final orgId = prefs.getString("organization_id");
 
       if (odooDb == null || odooDb.isEmpty) {
-        displayDb = orgId;
-      } else if (orgId == null || orgId.isNotEmpty) {
-        displayDb = odooDb;
+        displayDb = orgId ?? "N/A";
       } else {
-        displayDb = "N/A";
+        displayDb = odooDb;
       }
     } else {
       displayDb = "loading...";

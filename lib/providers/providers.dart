@@ -2,12 +2,11 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pda/database/appdatabase.dart';
 import 'package:pda/models/count_session.dart';
-import 'package:pda/models/mapper/result_mapper.dart';
-import 'package:pda/models/pda_service_model.dart';
 import 'package:pda/models/products.dart';
 import 'package:pda/services/api_services/authservice.dart';
 import 'package:pda/services/api_services/pda_services.dart';
 import 'package:pda/services/api_services/submit_erp.dart';
+import 'package:pda/services/secure_storage_service.dart';
 import 'package:pda/utilities/print_function.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:developer';
@@ -112,12 +111,13 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> _restoreSessionCookie() async {
     final prefs = await ref.read(sharedPrefsProvider.future);
-    final token = prefs.getString("token");
-    final sessionId = prefs.getString("session_id");
+    final secureStorage = SecureStorageService();
+    final token = await secureStorage.read(SecureStorageService.keyToken, prefs: prefs);
+    final sessionId = await secureStorage.read(SecureStorageService.keySessionId, prefs: prefs);
     final erpUrl = prefs.getString("erp_url");
 
     if (erpUrl == null) {
-      log("No erp URL in sharedpreferences.cannot restore auth");
+      printOrLog("No erp URL in sharedpreferences.cannot restore auth");
       return;
     }
     final uri = Uri.parse(erpUrl);
@@ -125,24 +125,25 @@ class AuthNotifier extends Notifier<AuthState> {
     if (token != null && token.isNotEmpty) {
       final cookie = Cookie("token", token);
       ApiClient.cookieJar.saveFromResponse(uri, [cookie]);
-      log("✅ Restored token into CookieJar: $token");
+      printOrLog("✅ Restored token into CookieJar");
     } else if (sessionId != null && sessionId.isNotEmpty) {
       final sessionCookie = Cookie("session_id", sessionId);
       await ApiClient.cookieJar.saveFromResponse(uri, [sessionCookie]);
-      log("restored odoo session_id $sessionCookie");
+      printOrLog("restored odoo session_id");
     } else {
-      log("⚠️ No session cookie found in SharedPreferences.");
+      printOrLog("⚠️ No session cookie found.");
     }
   }
 
   Future<void> _checkAuthenticationStatus() async {
-    log("🔍 Checking authentication status...");
+    printOrLog("🔍 Checking authentication status...");
 
     final prefs = await ref.read(sharedPrefsProvider.future);
-    final token = prefs.getString("token");
+    final secureStorage = SecureStorageService();
+    final token = await secureStorage.read(SecureStorageService.keyToken, prefs: prefs);
     final erpUrl = prefs.getString("erp_url");
     final userName = prefs.getString("username");
-    final sessionId = prefs.getString("session_id");
+    final sessionId = await secureStorage.read(SecureStorageService.keySessionId, prefs: prefs);
     final backend = prefs.getString("backend");
 
     final hasCredentials =
@@ -151,7 +152,7 @@ class AuthNotifier extends Notifier<AuthState> {
 
     // ✅ If no credentials or no URL, definitely not logged in
     if (!hasCredentials || erpUrl == null) {
-      log("❌ No valid credentials found");
+      printOrLog("❌ No valid credentials found");
       state = state.copyWith(
         isLoggedIn: false,
         userName: null,
@@ -163,9 +164,10 @@ class AuthNotifier extends Notifier<AuthState> {
 
     // ✅ Additional validation: Check if we have backend info
     if (backend == null || backend.isEmpty) {
-      log("❌ Backend info missing — stale session. Clearing and logging out");
+      printOrLog("❌ Backend info missing — stale session. Clearing and logging out");
 
       await prefs.clear();
+      await secureStorage.deleteAll(prefs: prefs);
       await ApiClient.cookieJar.deleteAll();
 
       state = state.copyWith(
@@ -366,17 +368,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
               .toList();
           printOrLog("✅ Parsed ${productsFromApi.length} Django products");
 
-          // 🧩 ADD THIS DEBUG BLOCK HERE ↓↓↓
-          for (final item in itemsList) {
-            final map = item as Map<String, dynamic>;
-            debugPrint(
-              '🧾 Django Product → name: ${map['item_name'] ?? map['printing_name']}, '
-              'code: ${map['item_code']}, '
-              'price: ${map['sale_price'] ?? map['mrp']}, '
-              'stock: ${map['current_stock']}',
-            );
-          }
-          // 🧩 DEBUG BLOCK ENDS ↑↑↑
+
         }
       }
 
@@ -407,8 +399,8 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
 
   Future<void> syncProducts() async {
     final prefs = await ref.read(sharedPrefsProvider.future);
-    final db = prefs.getString("db");
-    final isOdoo = db != null && db.isNotEmpty;
+    final backend = prefs.getString("backend");
+    final isOdoo = backend == 'odoo';
 
     try {
       if (isOdoo) {
@@ -434,19 +426,22 @@ final searchQueryProvider = StateProvider<String>((ref) => '');
 // Filtered Products Provider
 final filteredProductsProvider = Provider<List<Product>>((ref) {
   final asyncProducts = ref.watch(productsNotifierProvider);
-  final query = ref.watch(searchQueryProvider);
+  final rawQuery = ref.watch(searchQueryProvider);
 
   final products = asyncProducts.value ?? [];
-  if (query.isEmpty) return products;
+  final cleanQuery = rawQuery.trim().toLowerCase();
+  if (cleanQuery.isEmpty) return products;
 
   return products.where((p) {
-    final name = (p.name).toLowerCase();
-    final barcode = (p.barcode ?? '').toString();
-    final productId = (p.productId ?? '').toString();
+    final name = p.name.toLowerCase();
+    final barcode = (p.barcode ?? '').toLowerCase();
+    final productId = (p.productId ?? '').toLowerCase();
+    final sku = p.sku.toLowerCase();
 
-    return name.contains(query) ||
-        barcode.contains(query) ||
-        productId.contains(query);
+    return name.contains(cleanQuery) ||
+        barcode.contains(cleanQuery) ||
+        productId.contains(cleanQuery) ||
+        sku.contains(cleanQuery);
   }).toList();
 });
 
@@ -664,15 +659,3 @@ final sessionsNotifierProvider =
 
 // Scan Request Provider
 final scanRequestProvider = StateProvider<bool>((ref) => false);
-
-List<Product> _parseAndMapProductsInBackground(
-  Map<String, dynamic> responseData,
-) {
-  try {
-    final pdaModel = PdaServiceModel.fromJson(responseData);
-    return pdaModel.result.map((r) => r.toLocalProduct()).toList();
-  } catch (e) {
-    log("⚠️ Failed background parsing: $e");
-    return [];
-  }
-}

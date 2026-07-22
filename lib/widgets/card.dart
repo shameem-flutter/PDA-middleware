@@ -55,7 +55,7 @@ class _CustomCardState extends State<CustomCard> {
                     Text(
                       widget.title,
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 14,
                         fontWeight: FontWeight.bold,
                       ),
                       textAlign: TextAlign.start,
@@ -76,7 +76,7 @@ class _CustomCardState extends State<CustomCard> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: errorColor,
+                        color: onSurfaceColor,
                       ),
                     ),
                     Text(

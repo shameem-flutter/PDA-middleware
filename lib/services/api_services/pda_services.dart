@@ -44,19 +44,29 @@ class PdaServices {
 
       printOrLog("  Request Body: $requestBody");
 
-      final response = await ApiClient.dio.request(
-        fullUrl,
-        options: Options(
-          method: 'GET',
-          headers: {"Content-Type": "application/json"},
-        ),
-        data: requestBody,
-      );
+      try {
+        final response = await ApiClient.dio.post(
+          fullUrl,
+          options: Options(
+            headers: {"Content-Type": "application/json"},
+            validateStatus: (status) => status != null && status < 500,
+          ),
+          data: requestBody,
+        );
 
-      printOrLog("📡 Response Status: ${response.statusCode}");
-      printOrLog("📦 Response Data: ${response.data}");
+        printOrLog("📡 Response Status: ${response.statusCode}");
+        printOrLog("📦 Response Data: ${response.data}");
 
-      return response;
+        return response;
+      } on DioException catch (e) {
+        printOrLog(
+          "❌ Odoo getAllPda DioException: ${e.response?.statusCode} - ${e.response?.data}",
+        );
+        return e.response;
+      } catch (e) {
+        printOrLog("❌ Odoo getAllPda error: $e");
+        return null;
+      }
     } else if (backend == "django") {
       final orgId = prefs.getString('organization_id');
       if (orgId == null || orgId.isEmpty) {

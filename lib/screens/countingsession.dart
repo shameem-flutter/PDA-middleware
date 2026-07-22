@@ -20,32 +20,28 @@ class CountingSessionScreen extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<CountingSessionScreen> createState() => _StatefulWidget();
+  ConsumerState<CountingSessionScreen> createState() =>
+      _CountingSessionScreenState();
 }
 
-class _StatefulWidget extends ConsumerState<CountingSessionScreen> {
-  late final StateProvider<int> _countedProvider;
+class _CountingSessionScreenState extends ConsumerState<CountingSessionScreen> {
+  late int _counted;
 
   @override
   void initState() {
     super.initState();
-    _countedProvider = StateProvider<int>((ref) => widget.initialCounted ?? 0);
+    _counted = widget.initialCounted ?? 0;
   }
 
-  void _increment() {
-    ref.read(_countedProvider.notifier).state++;
-  }
+  void _increment() => setState(() => _counted++);
 
   void _decrease() {
-    final current = ref.read(_countedProvider);
-    if (current > 0) {
-      ref.read(_countedProvider.notifier).state--;
-    }
+    if (_counted > 0) setState(() => _counted--);
   }
 
   @override
   Widget build(BuildContext context) {
-    final counted = ref.watch(_countedProvider);
+    final counted = _counted;
     final erpQuantity = widget.product.erpQuantity;
     final difference = erpQuantity - counted;
 
@@ -120,9 +116,7 @@ class _StatefulWidget extends ConsumerState<CountingSessionScreen> {
                       )
                     else
                       Text("No barcode available"),
-                    vertGap(15),
-
-                    vertGap(30),
+                    vertGap(20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -212,9 +206,17 @@ class _StatefulWidget extends ConsumerState<CountingSessionScreen> {
                     );
                     return;
                   }
-                  await ref
-                      .read(sessionsNotifierProvider.notifier)
-                      .createSession(widget.product.id!, counted);
+                  // Update if session already exists, otherwise create
+                  final hasExistingSession = (widget.initialCounted ?? 0) > 0;
+                  if (hasExistingSession) {
+                    await ref
+                        .read(sessionsNotifierProvider.notifier)
+                        .updateSession(widget.product.id!, counted);
+                  } else {
+                    await ref
+                        .read(sessionsNotifierProvider.notifier)
+                        .createSession(widget.product.id!, counted);
+                  }
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (context.mounted) {
                       Navigator.pop(context, true);

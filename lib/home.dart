@@ -142,7 +142,6 @@ class _HomeState extends ConsumerState<Home> {
     Widget? navWidget;
     if (isWide) {
       navWidget = Scaffold(
-        appBar: AppBar(),
         resizeToAvoidBottomInset: false,
         body: Row(
           children: [
@@ -265,8 +264,8 @@ class _HomeState extends ConsumerState<Home> {
         final shouldPop = await _handleBackButton();
         log('Home: shouldPop result: $shouldPop');
 
-        if (!shouldPop && context.mounted) {
-          Navigator.of(context).maybePop();
+        if (shouldPop && context.mounted) {
+          Navigator.of(context).pop();
         }
       },
       child: _buildNavigationBody(),

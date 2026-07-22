@@ -45,13 +45,13 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
     final authState = ref.watch(authNotifierProvider);
 
     if (authState.isLoading) {
-      return authState.isLoggedIn
-          ? Home(initialIndex: 0)
-          : LoginScreen(onLogin: () {});
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
     return authState.isLoggedIn
-        ? Home(initialIndex: 0)
+        ? const Home(initialIndex: 0)
         : LoginScreen(onLogin: () {});
   }
 }

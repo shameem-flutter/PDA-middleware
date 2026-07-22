@@ -266,26 +266,28 @@ class DatabaseHelper {
 
   Future<void> syncProducts(List<Product> products) async {
     final db = await database;
-    const int chunkSize = 200;
-    for (var i = 0; i < products.length; i += chunkSize) {
-      final batch = db.batch();
-      final end = (i + chunkSize < products.length)
-          ? i + chunkSize
-          : products.length;
-      final chunk = products.sublist(i, end);
-      for (final product in chunk) {
-        final map = product.toMap();
-        if (map['sku'] == null || map['sku'].toString().trim().isEmpty) {
-          map['sku'] = 'SKU_${product.productId}';
+    await db.transaction((txn) async {
+      const int chunkSize = 200;
+      for (var i = 0; i < products.length; i += chunkSize) {
+        final batch = txn.batch();
+        final end = (i + chunkSize < products.length)
+            ? i + chunkSize
+            : products.length;
+        final chunk = products.sublist(i, end);
+        for (final product in chunk) {
+          final map = product.toMap();
+          if (map['sku'] == null || map['sku'].toString().trim().isEmpty) {
+            map['sku'] = 'SKU_${product.productId}';
+          }
+          batch.insert(
+            'products',
+            map,
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
         }
-        batch.insert(
-          'products',
-          map,
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        await batch.commit(noResult: true);
       }
-      await batch.commit(noResult: true);
-    }
+    });
   }
 
   // ---------------- Counting Sessions ----------------

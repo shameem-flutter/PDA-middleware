@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 import 'package:pda/constants/api_endpoints.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiClient {
   static final CookieJar cookieJar = CookieJar();
@@ -18,14 +17,6 @@ class ApiClient {
     );
     dioInstance.interceptors.add(CookieManager(cookieJar));
     return dioInstance;
-  }
-
-  static Future<void> refreshBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    final apiEndPoints = ApiEndpoints(Future.value(prefs));
-    final dynamicUrl = await apiEndPoints.actKeybaseUrl;
-
-    dio.options.baseUrl = dynamicUrl;
   }
 
   static void updateBaseUrl(String newUrl) {

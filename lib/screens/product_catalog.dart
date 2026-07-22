@@ -134,150 +134,200 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen> {
                       children: [
                         CircularProgressIndicator(color: primaryColor),
                         vertGap(16),
-                        Text("Syncing all products, please wait"),
+                        const Text(
+                          "Syncing products, please wait...",
+                          style: TextStyle(fontSize: 14, color: Colors.grey),
+                        ),
                       ],
                     ),
                   ),
-                  error: (error, stackTrace) =>
-                      Center(child: Text("Error: $error")),
+                  error: (error, stackTrace) => Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.cloud_off, size: 64, color: Colors.grey),
+                          vertGap(12),
+                          Text(
+                            "Unable to sync products: $error",
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: errorColor, fontSize: 14),
+                          ),
+                          vertGap(16),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              ref.read(productsNotifierProvider.notifier).syncProducts();
+                            },
+                            icon: const Icon(Icons.refresh),
+                            label: const Text("Retry Sync"),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryColor,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   data: (_) => sessionsAsync.when(
                     loading: () => Center(
                       child: CircularProgressIndicator(color: primaryColor),
                     ),
-                    error: (error, stackTrace) =>
-                        Center(child: Text("Error: $error")),
-                    data: (sessions) => displayedProducts.isEmpty
-                        ? const Center(child: Text("No products found"))
-                        : NotificationListener<OverscrollIndicatorNotification>(
-                            onNotification: (overScroll) {
-                              overScroll.disallowIndicator();
-                              return true;
-                            },
-                            child: RefreshIndicator(
-                              triggerMode: RefreshIndicatorTriggerMode.onEdge,
-                              displacement: 40,
-                              strokeWidth: 3,
-                              onRefresh: () async {
-                                final messenger = ScaffoldMessenger.of(context);
-                                try {
-                                  await ref
-                                      .read(productsNotifierProvider.notifier)
-                                      .syncProducts();
-                                  if (mounted) {
-                                    messenger.showSnackBar(
-                                      SnackBar(
-                                        content: Text("Syncing-Completed"),
-                                        duration: Duration(seconds: 1),
-                                        backgroundColor: successColor,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                        ),
-                                        behavior: SnackBarBehavior.floating,
-                                      ),
-                                    );
-                                  }
-                                } catch (e) {
-                                  if (mounted) {
-                                    messenger.showSnackBar(
-                                      SnackBar(
-                                        content: Text("failed to sync-data!!!"),
-                                        duration: Duration(seconds: 2),
-                                        backgroundColor: errorColor,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                        ),
-                                        behavior: SnackBarBehavior.floating,
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
-                              child: ListView.separated(
-                                physics: BouncingScrollPhysics(
-                                  parent: AlwaysScrollableScrollPhysics(),
+                    error: (error, stackTrace) => Center(
+                      child: Text("Error loading sessions: $error"),
+                    ),
+                    data: (sessions) {
+                      // O(1) session lookup map to optimize ListView item rendering
+                      final sessionMap = {
+                        for (final session in sessions) session.productId: session,
+                      };
+
+                      if (displayedProducts.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey.shade400),
+                              vertGap(12),
+                              Text(
+                                "No products found",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey.shade600,
                                 ),
-                                separatorBuilder: (_, _) => vertGap(5),
-                                controller: _scrollController,
-                                itemCount: displayedProducts.length,
-                                itemBuilder: (context, index) {
-                                  final product = displayedProducts[index];
-                                  final existingSession = sessions.firstWhere(
-                                    (session) =>
-                                        session.productId == product.id,
-                                    orElse: () => CountingSession(
-                                      productId: product.id ?? 0,
-                                      countedQuantity: 0,
-                                      erpQuantity: product.erpQuantity,
-                                      productName: product.name,
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      return NotificationListener<OverscrollIndicatorNotification>(
+                        onNotification: (overScroll) {
+                          overScroll.disallowIndicator();
+                          return true;
+                        },
+                        child: RefreshIndicator(
+                          triggerMode: RefreshIndicatorTriggerMode.onEdge,
+                          displacement: 40,
+                          strokeWidth: 3,
+                          onRefresh: () async {
+                            final messenger = ScaffoldMessenger.of(context);
+                            try {
+                              await ref
+                                  .read(productsNotifierProvider.notifier)
+                                  .syncProducts();
+                              if (mounted) {
+                                messenger.showSnackBar(
+                                  SnackBar(
+                                    content: const Text("Syncing-Completed"),
+                                    duration: const Duration(seconds: 1),
+                                    backgroundColor: successColor,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                messenger.showSnackBar(
+                                  SnackBar(
+                                    content: const Text("Failed to sync data!"),
+                                    duration: const Duration(seconds: 2),
+                                    backgroundColor: errorColor,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          child: ListView.separated(
+                            physics: const BouncingScrollPhysics(
+                              parent: AlwaysScrollableScrollPhysics(),
+                            ),
+                            separatorBuilder: (_, _) => vertGap(5),
+                            controller: _scrollController,
+                            itemCount: displayedProducts.length,
+                            itemBuilder: (context, index) {
+                              final product = displayedProducts[index];
+                              // Constant time O(1) lookup
+                              final existingSession = sessionMap[product.id] ??
+                                  CountingSession(
+                                    productId: product.id ?? 0,
+                                    countedQuantity: 0,
+                                    erpQuantity: product.erpQuantity,
+                                    productName: product.name,
                                   );
-                                  final hasSession =
-                                      existingSession.countedQuantity > 0;
+                              final hasSession =
+                                  existingSession.countedQuantity > 0;
 
-                                  return InkWell(
-                                    onTap: () async {
-                                      _searchFocusNode.unfocus();
-                                      final dbHelper = ref.read(dbProvider);
-                                      final navigator = Navigator.of(context);
-                                      await dbHelper.insertOrUpdateProduct(
-                                        product,
-                                      );
+                              return InkWell(
+                                onTap: () async {
+                                  _searchFocusNode.unfocus();
+                                  final dbHelper = ref.read(dbProvider);
+                                  final navigator = Navigator.of(context);
+                                  await dbHelper.insertOrUpdateProduct(
+                                    product,
+                                  );
 
-                                      if (!mounted) return;
-                                      await navigator.push<bool>(
-                                        MaterialPageRoute(
-                                          builder: (_) => CountingSessionScreen(
-                                            product: product,
-                                            initialCounted:
-                                                existingSession.countedQuantity,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 5,
-                                      ),
-                                      child: ListTile(
-                                        leading: Icon(Icons.image, size: 70),
-                                        trailing: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceEvenly,
-                                          children: [
-                                            Text("${product.erpQuantity}"),
-                                            const Text("in stock"),
-                                            if (hasSession)
-                                              Text(
-                                                "Counted: ${existingSession.countedQuantity}",
-                                                style: TextStyle(
-                                                  color: successColor,
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                        title: Text(
-                                          product.name,
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: hasSession
-                                                ? successColor
-                                                : null,
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          product.barcode.toString(),
-                                        ),
+                                  if (!mounted) return;
+                                  await navigator.push<bool>(
+                                    MaterialPageRoute(
+                                      builder: (_) => CountingSessionScreen(
+                                        product: product,
+                                        initialCounted:
+                                            existingSession.countedQuantity,
                                       ),
                                     ),
                                   );
                                 },
-                              ),
-                            ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 5,
+                                  ),
+                                  child: ListTile(
+                                    leading: const Icon(Icons.image, size: 70),
+                                    trailing: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceEvenly,
+                                      children: [
+                                        Text("${product.erpQuantity}"),
+                                        const Text("in stock"),
+                                        if (hasSession)
+                                          Text(
+                                            "Counted: ${existingSession.countedQuantity}",
+                                            style: const TextStyle(
+                                              color: successColor,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    title: Text(
+                                      product.name,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: hasSession
+                                            ? successColor
+                                            : null,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      product.barcode.toString(),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),

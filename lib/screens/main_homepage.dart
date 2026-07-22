@@ -75,19 +75,21 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
                           context,
                           imagePath: 'assets/images/print_barcode.png',
                           label: 'Print Barcode',
+                          // TODO: navigate to dedicated print screen
                           onPressed: () => _navigateToScreen(1),
                         ),
                         _buildGridItem(
                           context,
                           imagePath: 'assets/images/product_search2.png',
                           label: 'Product Search',
+                          // TODO: navigate to dedicated search screen
                           onPressed: () => _navigateToScreen(1),
                         ),
                         _buildGridItem(
                           context,
                           icon: Icons.sync,
                           label: 'Sync Data',
-                          onPressed: () => _navigateToScreen(3),
+                          onPressed: () => _syncData(),
                         ),
                       ],
                     ),
@@ -181,6 +183,67 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
         ref.read(tabNavigationProvider).switchToReview();
       } else {
         ref.read(tabNavigationProvider).switchToCatalog();
+      }
+    }
+  }
+
+  Future<void> _syncData() async {
+    final messenger = ScaffoldMessenger.of(context);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: primaryColor),
+              vertGap(16),
+              const Text(
+                "Syncing catalog data...",
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      await ref.read(productsNotifierProvider.notifier).syncProducts();
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        messenger.showSnackBar(
+          SnackBar(
+            content: const Text("Sync completed successfully"),
+            duration: const Duration(seconds: 2),
+            backgroundColor: successColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text("Sync failed: $e"),
+            duration: const Duration(seconds: 2),
+            backgroundColor: errorColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     }
   }

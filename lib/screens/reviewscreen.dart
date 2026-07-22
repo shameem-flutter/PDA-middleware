@@ -65,16 +65,37 @@ class _ReviewCountState extends ConsumerState<ReviewCount> {
         centerTitle: true,
       ),
       body: sessionsAsync.when(
+        loading: () => const Center(
+          child: CircularProgressIndicator(color: primaryColor),
+        ),
+        error: (err, stack) => Center(
+          child: Text("Error loading sessions: $err"),
+        ),
         data: (sessions) {
           if (sessions.isEmpty) {
-            return const Center(
-              child: Text(
-                "NO PRODUCTS SELECTED!",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: errorColor,
-                ),
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.fact_check_outlined, size: 64, color: Colors.grey.shade400),
+                  vertGap(12),
+                  Text(
+                    "No Counted Sessions Yet",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  vertGap(6),
+                  Text(
+                    "Scan or select products to begin counting",
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
+                ],
               ),
             );
           }
@@ -159,8 +180,6 @@ class _ReviewCountState extends ConsumerState<ReviewCount> {
             },
           );
         },
-        loading: () => null,
-        error: (e, _) => Center(child: Text("Error: $e")),
       ),
     );
   }

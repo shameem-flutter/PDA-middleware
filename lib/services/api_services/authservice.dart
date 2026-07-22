@@ -2,20 +2,24 @@ import 'dart:developer';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:pda/constants/apiclient.dart';
+import 'package:pda/services/secure_storage_service.dart';
+import 'package:pda/utilities/print_function.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Authservice {
   final Dio _dio = ApiClient.dio;
   final Future<SharedPreferences> _prefs;
+  final SecureStorageService _secureStorage = SecureStorageService();
+
   Authservice(this._prefs);
 
   Future<void> _switchBackend({
     required SharedPreferences prefs,
     required String backend, // "django" or "odoo"
   }) async {
-    // Clear old backend credentials
-    await prefs.remove("token"); // Django
-    await prefs.remove("session_id"); // Odoo
+    // Clear old backend credentials securely
+    await _secureStorage.delete(SecureStorageService.keyToken, prefs: prefs); // Django
+    await _secureStorage.delete(SecureStorageService.keySessionId, prefs: prefs); // Odoo
     await prefs.remove("db"); // Odoo
 
     // Save new backend flag
@@ -26,7 +30,7 @@ class Authservice {
       await ApiClient.cookieJar.deleteAll();
     } catch (_) {}
 
-    log("✅ Switched backend to $backend");
+    printOrLog("✅ Switched backend to $backend");
   }
 
   Future<bool> loginWithDjango({
@@ -38,7 +42,7 @@ class Authservice {
     final String url = "$baseUrl/api/login/";
 
     try {
-      log("🔄 Attempting login with Django backend...");
+      printOrLog("🔄 Attempting login with Django backend...");
 
       final response = await dio.post(
         url,
@@ -49,7 +53,7 @@ class Authservice {
         ),
       );
 
-      log("📡 Response: ${response.statusCode} - ${response.data}");
+      printOrLog("📡 Response: ${response.statusCode}");
 
       if (response.statusCode == 200 && response.data != null) {
         String? token;
@@ -66,27 +70,34 @@ class Authservice {
 
         if (token != null && token.isNotEmpty) {
           final prefs = await _prefs;
-          // 🔧 FIX #1: Changed from "odoo" to "django"
           await _switchBackend(prefs: prefs, backend: "django");
           await prefs.setString("username", username);
-          await prefs.setString("password", password);
           await prefs.setString("erp_url", baseUrl);
-          await prefs.setString("token", token);
-
-          log(
-            "✅ Django login successful. Token saved: ${token.substring(0, 20)}...",
+          
+          // Securely store sensitive credentials
+          await _secureStorage.write(
+            key: SecureStorageService.keyPassword,
+            value: password,
+            prefs: prefs,
           );
+          await _secureStorage.write(
+            key: SecureStorageService.keyToken,
+            value: token,
+            prefs: prefs,
+          );
+
+          printOrLog("✅ Django login successful.");
           return true;
         } else {
-          log("❌ Login failed — token not found in response.");
+          printOrLog("❌ Login failed — token not found in response.");
           return false;
         }
       }
 
-      log("❌ Django login failed: ${response.data}");
+      printOrLog("❌ Django login failed");
       return false;
     } catch (e) {
-      log("❌ Exception during Django login: $e");
+      printOrLog("❌ Exception during Django login: $e");
       return false;
     }
   }
@@ -95,27 +106,31 @@ class Authservice {
   Future<String?> refreshDjangoToken() async {
     final prefs = await _prefs;
     final username = prefs.getString("username");
-    final password = prefs.getString("password");
+    final password = await _secureStorage.read(
+      SecureStorageService.keyPassword,
+      prefs: prefs,
+    );
     final baseUrl = prefs.getString("erp_url");
 
-    // 🔧 FIX #2: Added baseUrl null check
     if (username == null || password == null || baseUrl == null) {
-      log("❌ Cannot refresh token — missing credentials or base URL.");
+      printOrLog("❌ Cannot refresh token — missing credentials or base URL.");
       return null;
     }
 
-    log("🔄 Refreshing Django token...");
-    await prefs.remove('token');
+    printOrLog("🔄 Refreshing Django token...");
+    await _secureStorage.delete(SecureStorageService.keyToken, prefs: prefs);
 
-    // 🔧 FIX #3: Removed unnecessary .toString()
     final success = await loginWithDjango(
       username: username,
       password: password,
       baseUrl: baseUrl,
     );
     if (success) {
-      final newToken = prefs.getString('token');
-      log("✅ Token refreshed successfully.");
+      final newToken = await _secureStorage.read(
+        SecureStorageService.keyToken,
+        prefs: prefs,
+      );
+      printOrLog("✅ Token refreshed successfully.");
       return newToken;
     }
     return null;
@@ -124,10 +139,13 @@ class Authservice {
   /// Get Django token (with auto-refresh if missing)
   Future<String?> getDjangoToken() async {
     final prefs = await _prefs;
-    String? token = prefs.getString("token");
+    String? token = await _secureStorage.read(
+      SecureStorageService.keyToken,
+      prefs: prefs,
+    );
 
     if (token == null || token.isEmpty) {
-      log("⚠️ Token not found — refreshing...");
+      printOrLog("⚠️ Token not found — refreshing...");
       token = await refreshDjangoToken();
     }
 
@@ -137,7 +155,10 @@ class Authservice {
   /// Check if token exists
   Future<bool> hasDjangoToken() async {
     final prefs = await _prefs;
-    final token = prefs.getString("token");
+    final token = await _secureStorage.read(
+      SecureStorageService.keyToken,
+      prefs: prefs,
+    );
     return token != null && token.isNotEmpty;
   }
 
@@ -192,22 +213,25 @@ class Authservice {
           final uri = Uri.parse(baseUrl);
           final sessionCookie = Cookie("session_id", sessionId);
           await ApiClient.cookieJar.saveFromResponse(uri, [sessionCookie]);
-          await prefs.setString("session_id", sessionId);
-          // 🔧 FIX #4: Removed duplicate lines (erp_url and db already set above)
+          await _secureStorage.write(
+            key: SecureStorageService.keySessionId,
+            value: sessionId,
+            prefs: prefs,
+          );
           return true;
         } else {
-          log("⚠️ No session_id found in JSON or cookies.");
+          printOrLog("⚠️ No session_id found in JSON or cookies.");
           return false;
         }
       }
 
       if (response.data["error"] != null) {
-        log("Server returned an error: ${response.data['error']['message']}");
+        printOrLog("Server returned an error: ${response.data['error']['message']}");
       }
 
       return false;
     } catch (e) {
-      log("Login failed with an exception: $e");
+      printOrLog("Login failed with an exception: $e");
       return false;
     }
   }
@@ -219,12 +243,11 @@ class Authservice {
     required String password,
   }) async {
     if (db.isEmpty) {
-      log("log in failed db/ organization id is required");
+      printOrLog("log in failed db/ organization id is required");
       return false;
     }
 
     final prefs = await _prefs;
-    // 🔧 IMPROVEMENT: More flexible Django detection
     final bool isDjango =
         baseUrl.contains("middleware.febnohost.com") ||
         baseUrl.contains("/api/login/");
@@ -238,14 +261,14 @@ class Authservice {
       if (djangoSuccess) {
         await prefs.setString('backend', 'django');
         await prefs.setString("organization_id", db);
-        log("django login success");
+        printOrLog("django login success");
         return true;
       }
-      log("Django login failed");
+      printOrLog("Django login failed");
       return false;
     }
 
-    log("Odoo login selected");
+    printOrLog("Odoo login selected");
 
     final odooSuccess = await loginWithOdoo(
       baseUrl: baseUrl,
@@ -255,28 +278,30 @@ class Authservice {
     );
     if (odooSuccess) {
       await prefs.setString('backend', 'odoo');
-      // organization_id already set in loginWithOdoo
-      log("log in with odoo success");
+      printOrLog("log in with odoo success");
       return true;
     }
 
     return false;
   }
 
-  /// ✅ IMPROVED: Thorough logout that clears everything
+  /// ✅ Thorough logout that clears local session and secure credentials
   Future<void> logOut() async {
     final prefs = await _prefs;
     final baseUrl = prefs.getString("erp_url");
     final db = prefs.getString("db");
-    final token = prefs.getString("token");
+    final token = await _secureStorage.read(
+      SecureStorageService.keyToken,
+      prefs: prefs,
+    );
 
-    log("🔄 Starting logout process...");
+    printOrLog("🔄 Starting logout process...");
 
     try {
       // 🔹 Attempt Odoo logout
       if (db != null && db.isNotEmpty && baseUrl != null) {
         const String endpoint = "/web/session/destroy";
-        log("🔄 Logging out from Odoo...");
+        printOrLog("🔄 Logging out from Odoo...");
 
         try {
           final response = await _dio.post(
@@ -289,19 +314,19 @@ class Authservice {
           );
 
           if (response.statusCode == 200) {
-            log("✅ Odoo logout successful.");
+            printOrLog("✅ Odoo logout successful.");
           } else {
-            log("⚠️ Odoo logout failed: ${response.statusCode}");
+            printOrLog("⚠️ Odoo logout failed: ${response.statusCode}");
           }
         } catch (e) {
-          log("⚠️ Odoo logout error (continuing cleanup): $e");
+          printOrLog("⚠️ Odoo logout error (continuing cleanup): $e");
         }
       }
 
       // 🔹 Attempt Django logout
       if (token != null && token.isNotEmpty && baseUrl != null) {
         final logoutUrl = "$baseUrl/api/logout/";
-        log("🔄 Logging out from Django...");
+        printOrLog("🔄 Logging out from Django...");
 
         try {
           final response = await _dio.post(
@@ -316,37 +341,33 @@ class Authservice {
           );
 
           if (response.statusCode == 200) {
-            log("✅ Django logout successful.");
+            printOrLog("✅ Django logout successful.");
           } else {
-            log("⚠️ Django logout failed: ${response.statusCode}");
+            printOrLog("⚠️ Django logout failed: ${response.statusCode}");
           }
         } catch (e) {
-          log("⚠️ Django logout error (continuing cleanup): $e");
+          printOrLog("⚠️ Django logout error (continuing cleanup): $e");
         }
       }
     } catch (e) {
-      log("⚠️ Unexpected error during logout: $e");
+      printOrLog("⚠️ Unexpected error during logout: $e");
     } finally {
-      // ✅ ALWAYS clear local data, even if server logout fails
-      log("🧹 Clearing all local session data...");
+      printOrLog("🧹 Clearing all local session data...");
 
       try {
-        // Clear all cookies
         await ApiClient.cookieJar.deleteAll();
-        log("✅ Cookies cleared");
+        printOrLog("✅ Cookies cleared");
       } catch (e) {
-        log("⚠️ Error clearing cookies: $e");
+        printOrLog("⚠️ Error clearing cookies: $e");
       }
 
       try {
-        // 🔧 FIX #5: Added organization_id to cleanup list
+        await _secureStorage.deleteAll(prefs: prefs);
+
         final keysToRemove = [
-          "token",
-          "session_id",
           "erp_url",
           "db",
           "username",
-          "password",
           "backend",
           "organization_id",
           "first_run",
@@ -356,24 +377,29 @@ class Authservice {
           await prefs.remove(key);
         }
 
-        log("✅ SharedPreferences cleared (individual keys)");
+        printOrLog("✅ SharedPreferences cleared (individual keys)");
       } catch (e) {
-        log("⚠️ Error clearing individual keys: $e");
+        printOrLog("⚠️ Error clearing individual keys: $e");
       }
 
-      log("✅ Logout complete - all local session data cleared.");
+      printOrLog("✅ Logout complete - all local session data cleared.");
     }
   }
 
   /// ✅ Check if user has valid credentials
   Future<bool> hasValidSession() async {
     final prefs = await _prefs;
-    final token = prefs.getString("token");
-    final sessionId = prefs.getString("session_id");
+    final token = await _secureStorage.read(
+      SecureStorageService.keyToken,
+      prefs: prefs,
+    );
+    final sessionId = await _secureStorage.read(
+      SecureStorageService.keySessionId,
+      prefs: prefs,
+    );
     final erpUrl = prefs.getString("erp_url");
     final backend = prefs.getString("backend");
 
-    // Must have either token or sessionId, AND must have erp_url
     final hasCredentials =
         (token != null && token.isNotEmpty) ||
         (sessionId != null && sessionId.isNotEmpty);
@@ -384,7 +410,11 @@ class Authservice {
   }
 
   Future<String?> getSessionId() async {
-    return (await _prefs).getString("session_id");
+    final prefs = await _prefs;
+    return await _secureStorage.read(
+      SecureStorageService.keySessionId,
+      prefs: prefs,
+    );
   }
 
   /// ✅ Get current backend type
@@ -407,10 +437,12 @@ class Authservice {
       final token = await refreshDjangoToken();
       return token != null;
     } else if (backend == "odoo") {
-      // For Odoo, we need to re-authenticate
       final prefs = await _prefs;
       final username = prefs.getString("username");
-      final password = prefs.getString("password");
+      final password = await _secureStorage.read(
+        SecureStorageService.keyPassword,
+        prefs: prefs,
+      );
       final baseUrl = prefs.getString("erp_url");
       final db = prefs.getString("db");
 
@@ -418,7 +450,7 @@ class Authservice {
           password == null ||
           baseUrl == null ||
           db == null) {
-        log("❌ Cannot refresh Odoo session — missing credentials.");
+        printOrLog("❌ Cannot refresh Odoo session — missing credentials.");
         return false;
       }
 
