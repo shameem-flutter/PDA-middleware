@@ -38,13 +38,8 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
                 child: Column(
                   children: [
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Image.asset(
-                          'assets/images/Flutter Vector Logo.jpeg',
-                          fit: BoxFit.contain,
-                          width: 60,
-                          height: 30,
-                        ),
                         Text(
                           "PDA Inventory Manager",
                           textAlign: TextAlign.center,

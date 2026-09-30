@@ -37,58 +37,63 @@ class Product {
     this.companyName,
   });
 
-  // ✅ Detects whether it's from Django or Odoo and maps automatically
+  // ✅ Unified API parser that supports all Django and Odoo JSON key variants
   factory Product.fromApi(Map<String, dynamic> map) {
-    final isDjango =
-        map.containsKey('item_code') || map.containsKey('item_name');
+    final parsedId = _parseInt(map['item_id']) ??
+        _parseInt(map['id']) ??
+        _parseInt(map['product_id']) ??
+        _parseInt(map['auto_id']);
 
-    if (isDjango) {
-      // 🔹 Django API format
-      return Product(
-        id: _parseInt(map['item_id']) ?? _parseInt(map['auto_id']),
-        name: map['item_name'] ?? map['printing_name'] ?? 'Unknown Product',
-        sku: map['item_code'] ?? 'NO-SKU',
-        barcode: map['item_code'],
-        erpQuantity: _parseInt(map['current_stock']) ?? 0,
-        productId: map['item_id']?.toString(),
-        imageUrl: map['image_url'],
-        categoryName: map['group']?.toString(),
-        categoryId: null,
-        salePrice: _parseDouble(map['sale_price']) ?? _parseDouble(map['mrp']),
-        cost:
-            _parseDouble(map['purchase_price']) ??
-            _parseDouble(map['cost_price']) ??
-            _parseDouble(map['basic_rate']),
-        uomName: map['unit']?.toString(),
-        reference: map['item_code'],
-        companyName: map['organization']?.toString(),
-      );
-    } else {
-      // 🔹 Odoo API format
-      return Product(
-        id: _parseInt(map['id']) ?? _parseInt(map['product_id']),
-        name:
-            map['name'] as String? ??
-            map['product_name'] as String? ??
-            'Unknown',
-        sku:
-            map['default_code'] as String? ??
-            map['reference'] as String? ??
-            map['id']?.toString() ??
-            'NO-SKU',
-        barcode: map['barcode'] as String?,
-        erpQuantity: _parseInt(map['available_qty']) ?? 0,
-        productId: map['product_id']?.toString(),
-        imageUrl: map['image_url'] as String?,
-        categoryName: map['category_name'] as String?,
-        categoryId: _parseInt(map['category_id']),
-        salePrice: _parseDouble(map['sale_price']),
-        cost: _parseDouble(map['cost']),
-        uomName: map['uom_name'] as String?,
-        reference: map['reference'] as String?,
-        companyName: map['company_name'] as String?,
-      );
-    }
+    final parsedBarcode = _parseString(map['barcode']) ??
+        _parseString(map['item_code']) ??
+        _parseString(map['default_code']);
+
+    final parsedSku = _parseString(map['sku']) ??
+        parsedBarcode ??
+        _parseString(map['reference']) ??
+        parsedId?.toString() ??
+        'NO-SKU';
+
+    final parsedProductId = _parseString(map['product_id']) ??
+        _parseString(map['item_id']) ??
+        parsedId?.toString();
+
+    return Product(
+      id: parsedId,
+      name: _parseString(map['name']) ??
+          _parseString(map['item_name']) ??
+          _parseString(map['product_name']) ??
+          _parseString(map['printing_name']) ??
+          'Unknown Product',
+      sku: parsedSku,
+      barcode: parsedBarcode,
+      erpQuantity: _parseInt(map['stock_qty']) ??
+          _parseInt(map['current_stock']) ??
+          _parseInt(map['available_qty']) ??
+          _parseInt(map['qty']) ??
+          0,
+      productId: parsedProductId,
+      imageUrl: _parseString(map['image_url']) ?? _parseString(map['imageUrl']),
+      categoryName: _parseString(map['group_name']) ??
+          _parseString(map['group']) ??
+          _parseString(map['category_name']) ??
+          _parseString(map['category']),
+      categoryId: _parseInt(map['group_id']) ?? _parseInt(map['category_id']),
+      salePrice: _parseDouble(map['price']) ??
+          _parseDouble(map['sale_price']) ??
+          _parseDouble(map['mrp']),
+      cost: _parseDouble(map['purchase_price']) ??
+          _parseDouble(map['cost_price']) ??
+          _parseDouble(map['cost']) ??
+          _parseDouble(map['basic_rate']),
+      uomName: _parseString(map['unit_name']) ??
+          _parseString(map['uom']) ??
+          _parseString(map['uom_name']) ??
+          _parseString(map['unit']),
+      reference: _parseString(map['reference']) ?? parsedBarcode,
+      companyName: _parseString(map['company_name']) ??
+          _parseString(map['organization']),
+    );
   }
 
   // ✅ Converts to JSON (for local DB or API storage)
@@ -109,41 +114,54 @@ class Product {
     'companyName': companyName,
   };
 
-  // ✅ Creates object from local SQLite data
+  // ✅ Creates object from local SQLite data with safe camelCase & snake_case column fallbacks
   factory Product.fromMap(Map<String, dynamic> map) => Product(
-    id: _parseInt(map['id']),
-    name: map['name'] ?? 'Unknown',
-    barcode: map['barcode'],
-    erpQuantity: _parseInt(map['erpQuantity']) ?? 0,
-    productId: map['productId']?.toString(),
-    imageUrl: map['imageUrl'],
-    categoryName: map['categoryName'],
-    categoryId: _parseInt(map['categoryId']),
-    salePrice: _parseDouble(map['salePrice']),
-    cost: _parseDouble(map['cost']),
-    uomName: map['uomName'],
-    sku: map['sku'] ?? 'NO-SKU',
-    reference: map['reference'],
-    companyName: map['companyName'],
+    id: _parseInt(map['id']) ?? _parseInt(map['item_id']) ?? _parseInt(map['product_id']),
+    name: (map['name'] ?? map['product_name'] ?? map['item_name'] ?? map['printing_name'] ?? 'Unknown').toString(),
+    barcode: map['barcode']?.toString() ?? map['item_code']?.toString(),
+    erpQuantity: _parseInt(map['erpQuantity']) ??
+        _parseInt(map['erp_quantity']) ??
+        _parseInt(map['current_stock']) ??
+        _parseInt(map['available_qty']) ??
+        0,
+    productId: (map['product_id'] ?? map['productId'] ?? map['item_id'])?.toString(),
+    imageUrl: (map['imageUrl'] ?? map['image_url'])?.toString(),
+    categoryName: (map['category_name'] ?? map['categoryName'] ?? map['group'])?.toString(),
+    categoryId: _parseInt(map['category_id']) ?? _parseInt(map['categoryId']),
+    salePrice: _parseDouble(map['sale_price']) ??
+        _parseDouble(map['salePrice']) ??
+        _parseDouble(map['mrp']),
+    cost: _parseDouble(map['cost']) ??
+        _parseDouble(map['cost_price']) ??
+        _parseDouble(map['purchase_price']),
+    uomName: (map['uom_name'] ?? map['uomName'] ?? map['unit'])?.toString(),
+    sku: (map['sku'] ?? map['item_code'] ?? map['default_code'] ?? map['reference'] ?? 'NO-SKU').toString(),
+    reference: (map['reference'] ?? map['item_code'])?.toString(),
+    companyName: (map['company_name'] ?? map['companyName'] ?? map['organization'])?.toString(),
   );
 
-  // ✅ Converts Product to SQLite Map
-  Map<String, dynamic> toMap() => {
-    'id': id,
-    'name': name,
-    'barcode': barcode,
-    'erpQuantity': erpQuantity,
-    'product_id': productId,
-    'imageUrl': imageUrl,
-    'category_name': categoryName,
-    'category_id': categoryId,
-    'sale_price': salePrice,
-    'cost': cost,
-    'uom_name': uomName,
-    'sku': sku,
-    'reference': reference,
-    'company_name': companyName,
-  };
+  // ✅ Converts Product to SQLite Map (only includes id if non-null to avoid SET id = NULL primary key mismatch)
+  Map<String, dynamic> toMap() {
+    final map = <String, dynamic>{
+      'name': name,
+      'barcode': barcode,
+      'erpQuantity': erpQuantity,
+      'product_id': productId,
+      'imageUrl': imageUrl,
+      'category_name': categoryName,
+      'category_id': categoryId,
+      'sale_price': salePrice,
+      'cost': cost,
+      'uom_name': uomName,
+      'sku': sku,
+      'reference': reference,
+      'company_name': companyName,
+    };
+    if (id != null) {
+      map['id'] = id;
+    }
+    return map;
+  }
 
   // ✅ Helpers to parse safely
   static int? _parseInt(dynamic value) {
@@ -160,5 +178,12 @@ class Product {
     if (value is int) return value.toDouble();
     if (value is String) return double.tryParse(value);
     return null;
+  }
+
+  static String? _parseString(dynamic value) {
+    if (value == null) return null;
+    if (value is List && value.isNotEmpty) return value.first.toString();
+    final str = value.toString().trim();
+    return str.isNotEmpty ? str : null;
   }
 }

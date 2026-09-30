@@ -3,28 +3,33 @@ import 'package:pda/models/products.dart';
 
 void main() {
   group('Product API & Serialization Tests', () {
-    test('Correctly parses Django API item format', () {
-      final djangoJson = {
-        'item_id': 101,
-        'item_name': 'Test Item Django',
-        'item_code': 'DJ-101',
-        'current_stock': 45,
-        'sale_price': '29.99',
-        'purchase_price': 15.0,
-        'group': 'Retail',
-        'organization': 'Org1',
+    test('Correctly parses user Django API payload format', () {
+      final djangoUserJson = {
+        'item_id': 4056,
+        'name': '+JOSHANDA',
+        'arabic_name': '#NAME?',
+        'price': 1.5,
+        'purchase_price': 0.35,
+        'barcode': '855434002966',
+        'group_id': 29,
+        'group_name': 'COSMETICS & CLEANING',
+        'stock_qty': -5.0,
+        'unit_name': 'PCS',
+        'company_id': [1],
+        'company_name': ['Haitham Saud Al-Subhi- Contracting Establishment'],
       };
 
-      final product = Product.fromApi(djangoJson);
+      final product = Product.fromApi(djangoUserJson);
 
-      expect(product.id, equals(101));
-      expect(product.name, equals('Test Item Django'));
-      expect(product.sku, equals('DJ-101'));
-      expect(product.barcode, equals('DJ-101'));
-      expect(product.erpQuantity, equals(45));
-      expect(product.salePrice, equals(29.99));
-      expect(product.cost, equals(15.0));
-      expect(product.companyName, equals('Org1'));
+      expect(product.id, equals(4056));
+      expect(product.name, equals('+JOSHANDA'));
+      expect(product.barcode, equals('855434002966'));
+      expect(product.erpQuantity, equals(-5));
+      expect(product.salePrice, equals(1.5));
+      expect(product.cost, equals(0.35));
+      expect(product.categoryName, equals('COSMETICS & CLEANING'));
+      expect(product.uomName, equals('PCS'));
+      expect(product.companyName, equals('Haitham Saud Al-Subhi- Contracting Establishment'));
     });
 
     test('Correctly parses Odoo API item format', () {

@@ -106,7 +106,7 @@ class AuthNotifier extends Notifier<AuthState> {
   @override
   AuthState build() {
     _checkAuthenticationStatus();
-    return AuthState(isLoading: false, isLoggedIn: false);
+    return AuthState(isLoading: true, isLoggedIn: false);
   }
 
   Future<void> _restoreSessionCookie() async {
@@ -242,11 +242,18 @@ class AuthNotifier extends Notifier<AuthState> {
         ref.invalidate(productsNotifierProvider);
       }
 
-      final token = prefs.getString("token");
-      final sessionId = prefs.getString("session_id");
+      final secureStorage = SecureStorageService();
+      final token = await secureStorage.read(
+        SecureStorageService.keyToken,
+        prefs: prefs,
+      );
+      final sessionId = await secureStorage.read(
+        SecureStorageService.keySessionId,
+        prefs: prefs,
+      );
       if ((token == null || token.isEmpty) &&
           (sessionId == null || sessionId.isEmpty)) {
-        log("Login succeeded but token is missing in SharedPreferences");
+        log("Login succeeded but token/session_id missing in SecureStorage");
         state = state.copyWith(isLoading: false);
         return false;
       }
@@ -266,10 +273,15 @@ class AuthNotifier extends Notifier<AuthState> {
       if (db.isNotEmpty) {
         await prefs.setString("organization_id", db);
       }
-      log("Login successful with  token: $token");
+      log("Login successful with token: ${token ?? sessionId}");
 
-      // Optionally trigger product sync
+      // Restore session cookie into CookieJar
+      await _restoreSessionCookie();
 
+      // Refresh backend provider so dependent services pick up the newly stored backend
+      ref.invalidate(erpBackendProvider);
+
+      // Trigger product sync
       ref.invalidate(sessionsNotifierProvider);
       ref.invalidate(productsNotifierProvider);
       await ref.read(productsNotifierProvider.notifier).syncProducts();
@@ -279,6 +291,7 @@ class AuthNotifier extends Notifier<AuthState> {
         userName: username,
         erpUrl: baseUrl,
         isLoading: false,
+        token: token,
       );
 
       return true;
@@ -349,13 +362,12 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
           final List<dynamic> resultList = jsonData["result"];
 
           productsFromApi = resultList.map((item) {
-            return Product.fromApi({
-              "id": item["product_id"],
-              "name": item["product_name"] ?? "Unknown",
-              "barcode": item["barcode"] ?? "",
-              "product_id": item["reference"] ?? "",
-              "erp_quantity": (item["available_qty"] ?? 0).toInt(),
-            });
+            if (item is Map<String, dynamic>) {
+              return Product.fromApi(item);
+            } else if (item is Map) {
+              return Product.fromApi(Map<String, dynamic>.from(item));
+            }
+            return Product.fromApi({});
           }).toList();
 
           printOrLog("✅ Parsed ${productsFromApi.length} Odoo products");

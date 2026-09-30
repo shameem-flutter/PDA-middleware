@@ -128,10 +128,6 @@ class _HomeState extends ConsumerState<Home> {
     final bool isReviewScreen = navBarIndex == 3;
     final isWide = isWidthGreaterThan400(context);
 
-    if (navBarIndex == 0) {
-      return _screens[0];
-    }
-
     Widget buildBody() {
       return PageStorage(
         bucket: _bucket,

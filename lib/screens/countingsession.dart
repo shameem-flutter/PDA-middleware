@@ -46,6 +46,7 @@ class _CountingSessionScreenState extends ConsumerState<CountingSessionScreen> {
     final difference = erpQuantity - counted;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
         iconTheme: IconThemeData(color: surfaceColor),
         toolbarHeight: 70,
@@ -73,49 +74,55 @@ class _CountingSessionScreenState extends ConsumerState<CountingSessionScreen> {
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 20,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
-                      widget.product.name,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 20,
-                      ),
-                    ),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: fadeColor,
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      child: Text("Product-Id:${widget.product.productId}"),
-                    ),
-                    vertGap(10),
-
-                    if (widget.product.barcode != null &&
-                        widget.product.barcode!.isNotEmpty)
-                      Center(
-                        child: BarcodeWidget(
-                          data: widget.product.barcode!,
-                          barcode: Barcode.code128(),
-                          width: 250,
-                          height: 110,
-                          drawText: true,
+      body: Material(
+        color: Colors.white,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 20,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        widget.product.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 20,
                         ),
-                      )
-                    else
-                      Text("No barcode available"),
+                      ),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: fadeColor,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Text("Product-Id:${widget.product.productId}"),
+                      ),
+                      vertGap(10),
+
+                      if (widget.product.barcode != null &&
+                          widget.product.barcode!.isNotEmpty)
+                        Center(
+                          child: SizedBox(
+                            width: 250,
+                            height: 110,
+                            child: BarcodeWidget(
+                              data: widget.product.barcode!,
+                              barcode: Barcode.code128(),
+                              width: 250,
+                              height: 110,
+                              drawText: true,
+                            ),
+                          ),
+                        )
+                      else
+                        const Text("No barcode available"),
                     vertGap(20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -162,7 +169,7 @@ class _CountingSessionScreenState extends ConsumerState<CountingSessionScreen> {
           );
         },
       ),
-
+    ),
       bottomNavigationBar: Container(
         height: 80,
         decoration: BoxDecoration(color: onPrimaryColor),
@@ -180,10 +187,25 @@ class _CountingSessionScreenState extends ConsumerState<CountingSessionScreen> {
               text: "Save & Continue",
               onPressed: () async {
                 final messenger = ScaffoldMessenger.of(context);
+                final dbHelper = ref.read(dbProvider);
+
                 if (counted > 0) {
-                  if (widget.product.id == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
+                  // Ensure product is inserted/updated in SQLite database
+                  await dbHelper.insertOrUpdateProduct(widget.product);
+
+                  // Resolve non-null primary key integer ID
+                  int? effectiveId = widget.product.id;
+                  if (effectiveId == null &&
+                      widget.product.barcode != null &&
+                      widget.product.barcode!.isNotEmpty) {
+                    final savedProduct = await dbHelper
+                        .getProductByBarcode(widget.product.barcode!);
+                    effectiveId = savedProduct?.id;
+                  }
+
+                  if (effectiveId == null) {
+                    messenger.showSnackBar(
+                      const SnackBar(
                         content: Text(
                           "Product ID missing. Please reload catalog.",
                         ),
@@ -191,31 +213,31 @@ class _CountingSessionScreenState extends ConsumerState<CountingSessionScreen> {
                     );
                     return;
                   }
-                  final dbHelper = ref.read(dbProvider);
-                  final productInDb = await dbHelper.getProductById(
-                    widget.product.id!,
-                  );
+
+                  final productInDb =
+                      await dbHelper.getProductById(effectiveId);
                   if (productInDb == null) {
                     messenger.showSnackBar(
-                      SnackBar(
+                      const SnackBar(
                         content: Text(
-                          "product not synced. please refresh catalog ",
+                          "Product not synced. Please refresh catalog.",
                         ),
-                        duration: Duration(milliseconds: 400),
+                        duration: Duration(milliseconds: 600),
                       ),
                     );
                     return;
                   }
+
                   // Update if session already exists, otherwise create
                   final hasExistingSession = (widget.initialCounted ?? 0) > 0;
                   if (hasExistingSession) {
                     await ref
                         .read(sessionsNotifierProvider.notifier)
-                        .updateSession(widget.product.id!, counted);
+                        .updateSession(effectiveId, counted);
                   } else {
                     await ref
                         .read(sessionsNotifierProvider.notifier)
-                        .createSession(widget.product.id!, counted);
+                        .createSession(effectiveId, counted);
                   }
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (context.mounted) {

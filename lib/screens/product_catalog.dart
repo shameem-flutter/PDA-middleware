@@ -127,61 +127,62 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen> {
               ),
 
               Expanded(
-                child: productsAsync.when(
-                  loading: () => Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(color: primaryColor),
-                        vertGap(16),
-                        const Text(
-                          "Syncing products, please wait...",
-                          style: TextStyle(fontSize: 14, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                  error: (error, stackTrace) => Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.cloud_off, size: 64, color: Colors.grey),
-                          vertGap(12),
-                          Text(
-                            "Unable to sync products: $error",
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: errorColor, fontSize: 14),
-                          ),
-                          vertGap(16),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              ref.read(productsNotifierProvider.notifier).syncProducts();
-                            },
-                            icon: const Icon(Icons.refresh),
-                            label: const Text("Retry Sync"),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryColor,
-                              foregroundColor: Colors.white,
+                child: (productsAsync.isLoading && !productsAsync.hasValue)
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(color: primaryColor),
+                            vertGap(16),
+                            const Text(
+                              "Syncing products, please wait...",
+                              style:
+                                  TextStyle(fontSize: 14, color: Colors.grey),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  data: (_) => sessionsAsync.when(
-                    loading: () => Center(
-                      child: CircularProgressIndicator(color: primaryColor),
-                    ),
-                    error: (error, stackTrace) => Center(
-                      child: Text("Error loading sessions: $error"),
-                    ),
-                    data: (sessions) {
-                      // O(1) session lookup map to optimize ListView item rendering
-                      final sessionMap = {
-                        for (final session in sessions) session.productId: session,
-                      };
+                          ],
+                        ),
+                      )
+                    : (productsAsync.hasError && !productsAsync.hasValue)
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24.0),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.cloud_off,
+                                      size: 64, color: Colors.grey),
+                                  vertGap(12),
+                                  Text(
+                                    "Unable to sync products: ${productsAsync.error}",
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                        color: errorColor, fontSize: 14),
+                                  ),
+                                  vertGap(16),
+                                  ElevatedButton.icon(
+                                    onPressed: () {
+                                      ref
+                                          .read(
+                                              productsNotifierProvider.notifier)
+                                          .syncProducts();
+                                    },
+                                    icon: const Icon(Icons.refresh),
+                                    label: const Text("Retry Sync"),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: primaryColor,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : Builder(builder: (context) {
+                            final sessions = sessionsAsync.valueOrNull ?? [];
+                            final sessionMap = {
+                              for (final session in sessions)
+                                session.productId: session,
+                            };
 
                       if (displayedProducts.isEmpty) {
                         return Center(
@@ -268,17 +269,11 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen> {
                                   existingSession.countedQuantity > 0;
 
                               return InkWell(
-                                onTap: () async {
-                                  _searchFocusNode.unfocus();
-                                  final dbHelper = ref.read(dbProvider);
-                                  final navigator = Navigator.of(context);
-                                  await dbHelper.insertOrUpdateProduct(
-                                    product,
-                                  );
-
-                                  if (!mounted) return;
-                                  await navigator.push<bool>(
+                                onTap: () {
+                                  FocusScope.of(context).unfocus();
+                                  Navigator.of(context).push<bool>(
                                     MaterialPageRoute(
+                                      maintainState: true,
                                       builder: (_) => CountingSessionScreen(
                                         product: product,
                                         initialCounted:
@@ -327,9 +322,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen> {
                           ),
                         ),
                       );
-                    },
-                  ),
-                ),
+                    }),
               ),
             ],
           );

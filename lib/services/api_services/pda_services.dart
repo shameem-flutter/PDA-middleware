@@ -26,38 +26,65 @@ class PdaServices {
         throw Exception("Odoo URL not found. Please log in again.");
       }
 
-      final fullUrl = "$baseUrl/api/get_products_data";
+      final cleanBaseUrl = baseUrl.endsWith('/')
+          ? baseUrl.substring(0, baseUrl.length - 1)
+          : baseUrl;
 
       final Map<String, dynamic> requestBody = {"jsonrpc": "2.0", "params": {}};
 
-      final cookies = await ApiClient.cookieJar.loadForRequest(
-        Uri.parse(baseUrl),
-      );
-      printOrLog("🍪 Cookies being sent:");
-      for (var cookie in cookies) {
-        printOrLog("  ${cookie.name} = ${cookie.value}");
-      }
-
-      // ✅ Add detailed logging
-      printOrLog("🔍 Odoo Request Details:");
-      printOrLog("  Full URL: $fullUrl");
-
-      printOrLog("  Request Body: $requestBody");
+      final candidateEndpoints = [
+        "$cleanBaseUrl/api/get_pda_products_data",
+        "$cleanBaseUrl/api/get_pda_products_data/",
+        "$cleanBaseUrl/api/get_products_data",
+        "$cleanBaseUrl/api/get_products_data/",
+      ];
 
       try {
-        final response = await ApiClient.dio.post(
-          fullUrl,
-          options: Options(
-            headers: {"Content-Type": "application/json"},
-            validateStatus: (status) => status != null && status < 500,
-          ),
-          data: requestBody,
-        );
+        Response? lastResponse;
 
-        printOrLog("📡 Response Status: ${response.statusCode}");
-        printOrLog("📦 Response Data: ${response.data}");
+        for (final url in candidateEndpoints) {
+          printOrLog("🔍 Trying Odoo POST: $url");
+          try {
+            final res = await ApiClient.dio.post(
+              url,
+              options: Options(
+                headers: {"Content-Type": "application/json"},
+                validateStatus: (status) => status != null && status < 500,
+              ),
+              data: requestBody,
+            );
 
-        return response;
+            lastResponse = res;
+            printOrLog("📡 Response Status: ${res.statusCode} for $url");
+
+            if (res.statusCode == 200) {
+              printOrLog("✅ Odoo POST succeeded on: $url");
+              return res;
+            }
+
+            if (res.statusCode == 405) {
+              printOrLog(
+                "⚠️ 405 Method Not Allowed on POST $url — Trying GET...",
+              );
+              final getRes = await ApiClient.dio.get(
+                url,
+                options: Options(
+                  headers: {"Content-Type": "application/json"},
+                  validateStatus: (status) => status != null && status < 500,
+                ),
+              );
+              if (getRes.statusCode == 200) {
+                printOrLog("✅ Odoo GET succeeded on: $url");
+                return getRes;
+              }
+            }
+          } catch (e) {
+            printOrLog("⚠️ Error attempting $url: $e");
+          }
+        }
+
+        printOrLog("📦 Final Response Data: ${lastResponse?.data}");
+        return lastResponse;
       } on DioException catch (e) {
         printOrLog(
           "❌ Odoo getAllPda DioException: ${e.response?.statusCode} - ${e.response?.data}",

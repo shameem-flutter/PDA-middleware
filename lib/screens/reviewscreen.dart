@@ -64,14 +64,16 @@ class _ReviewCountState extends ConsumerState<ReviewCount> {
         backgroundColor: primaryColor,
         centerTitle: true,
       ),
-      body: sessionsAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: primaryColor),
-        ),
-        error: (err, stack) => Center(
-          child: Text("Error loading sessions: $err"),
-        ),
-        data: (sessions) {
+      body: (sessionsAsync.isLoading && !sessionsAsync.hasValue)
+          ? const Center(
+              child: CircularProgressIndicator(color: primaryColor),
+            )
+          : (sessionsAsync.hasError && !sessionsAsync.hasValue)
+              ? Center(
+                  child: Text("Error loading sessions: ${sessionsAsync.error}"),
+                )
+              : Builder(builder: (context) {
+                  final sessions = sessionsAsync.valueOrNull ?? [];
           if (sessions.isEmpty) {
             return Center(
               child: Column(
@@ -179,8 +181,7 @@ class _ReviewCountState extends ConsumerState<ReviewCount> {
               );
             },
           );
-        },
-      ),
+        }),
     );
   }
 

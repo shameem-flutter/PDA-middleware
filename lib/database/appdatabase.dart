@@ -249,18 +249,36 @@ class DatabaseHelper {
   Future<void> insertOrUpdateProduct(Product product) async {
     final db = await database;
     final map = product.toMap();
-    if (map['sku'] == null || map['sku'].trim().isEmpty) {
+    if (map['sku'] == null || map['sku'].toString().trim().isEmpty) {
       map['sku'] = 'SKU_${product.productId}';
     }
 
-    final count = await db.update(
-      'products',
-      map,
-      where: 'id = ?',
-      whereArgs: [product.id],
-    );
+    int count = 0;
+    if (product.id != null) {
+      count = await db.update(
+        'products',
+        map,
+        where: 'id = ?',
+        whereArgs: [product.id],
+      );
+    } else if (product.productId != null && product.productId.toString().isNotEmpty) {
+      count = await db.update(
+        'products',
+        map,
+        where: 'product_id = ?',
+        whereArgs: [product.productId.toString()],
+      );
+    } else if (product.barcode != null && product.barcode.toString().isNotEmpty) {
+      count = await db.update(
+        'products',
+        map,
+        where: 'barcode = ?',
+        whereArgs: [product.barcode.toString()],
+      );
+    }
+
     if (count == 0) {
-      await db.insert('products', map);
+      await db.insert('products', map, conflictAlgorithm: ConflictAlgorithm.replace);
     }
   }
 
